@@ -1,0 +1,42 @@
+# File introduces automated checks triggered on git events
+# to enable run `pip install pre-commit && pre-commit install`
+
+repos:
+  - repo: local
+    hooks:
+      - id: yapf
+        name: yapf
+        language: python
+        entry: yapf
+        args: [-i, -vv]
+        types: [python]
+      - id: pylint
+        name: pylint
+        entry: pylint
+        language: python
+        types: [python]
+        args: [--rcfile=.pylintrc]
+      - id: clang-format
+        name: clang-format
+        language: system
+        entry: clang-format
+        args: [-i]
+        files: \.(c|cu|cc|cxx|cpp|h|cuh|hpp|hxx)$
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.2.0
+    hooks:
+      - id: trailing-whitespace
+      - id: check-docstring-first
+      - id: check-json
+      - id: check-added-large-files
+      - id: check-yaml
+      - id: debug-statements
+      - id: requirements-txt-fixer
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: sort-simple-yaml
+      - id: mixed-line-ending
+        args: [--fix=no]
+  - repo: meta
+    hooks:
+      - id: check-useless-excludes

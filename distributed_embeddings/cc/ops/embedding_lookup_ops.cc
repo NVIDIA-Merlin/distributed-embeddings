@@ -1,0 +1,119 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include "tensorflow/core/framework/common_shape_fns.h"
+#include "tensorflow/core/framework/op.h"
+#include "tensorflow/core/framework/shape_inference.h"
+
+namespace tensorflow {
+REGISTER_OP("ReadVariableNoCopy")
+    .Input("resource: resource")
+    .Output("value: dtype")
+    .Attr("dtype: type")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      std::vector<shape_inference::ShapeAndType> shape_and_type;
+      TF_RETURN_IF_ERROR(shape_inference::ValidateVariableResourceHandle(c, &shape_and_type));
+      c->set_output(0, shape_and_type[0].shape);
+      return Status::OK();
+    });
+
+REGISTER_OP("EmbeddingLookupConstantHotness")
+    .Attr("T: {float}")
+    .Attr("Tindices: {int32, int64}")
+    .Input("param: T")
+    .Input("ids: Tindices")
+    .Output("output_params: T")
+    .Attr("combiner:  {'sum', 'mean'}")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      // param: [N,p], ids:[m, n], output: [m, p]
+      shape_inference::ShapeHandle params_shape;
+      shape_inference::ShapeHandle ids_shape;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &params_shape));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &ids_shape));
+      c->set_output(0, c->Matrix(c->Dim(ids_shape, 0), c->Dim(params_shape, 1)));
+      return Status::OK();
+    });
+
+REGISTER_OP("EmbeddingLookupConstantHotnessGrad")
+    .Attr("T: {float}")
+    .Attr("Tindices: {int32, int64}")
+    .Input("grad: T")
+    .Input("ids: Tindices")
+    .Output("grad_param_value: T")
+    .Attr("combiner:  {'sum', 'mean'}")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      // param: [N,p], ids:[m,n], grad: [m,p], grad_param_value: [m*n, p]
+      // we used ids as input here just to do shape inference
+      shape_inference::ShapeHandle grad_shape;
+      shape_inference::ShapeHandle ids_shape;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &grad_shape));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &ids_shape));
+      auto outdim_0 = c->Value(c->Dim(ids_shape, 0)) * c->Value(c->Dim(ids_shape, 1));
+      c->set_output(0, c->Matrix(outdim_0, c->Dim(grad_shape, 1)));
+      return Status::OK();
+    });
+
+REGISTER_OP("EmbeddingLookupVariableHotness")
+    .Attr("T: {float}")
+    .Attr("Tindices: {int32, int64}")
+    .Input("param: T")
+    .Input("ids: Tindices")
+    .Input("offsets: Tindices")
+    .Output("output_params: T")
+    .Attr("combiner:  {'sum', 'mean'}")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      // vitual input: [m,n], param: [N,p], ids:[nnz], offsets:[m+1]
+      // output: [m, p]
+      shape_inference::ShapeHandle params_shape;
+      shape_inference::ShapeHandle ids_shape;
+      shape_inference::ShapeHandle offsets_shape;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &params_shape));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 1, &ids_shape));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &offsets_shape));
+      auto outdim_0 = c->Value(c->Dim(offsets_shape, 0));
+      // Just in case shape inference happens while batch dim is not None
+      if (outdim_0 > 0) {
+        outdim_0 -= 1;
+      }
+      c->set_output(0, c->Matrix(outdim_0, c->Dim(params_shape, 1)));
+      return Status::OK();
+    });
+
+REGISTER_OP("EmbeddingLookupVariableHotnessGrad")
+    .Attr("T: {float}")
+    .Attr("Tindices: {int32, int64}")
+    .Input("grad: T")
+    .Input("ids: Tindices")
+    .Input("offsets: Tindices")
+    .Output("grad_param_value: T")
+    .Attr("combiner:  {'sum', 'mean'}")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      // vitual input: [m,n], param: [N,p], ids:[nnz], offsets:[m+1]
+      // grad: [m, p], grad_param_value: [nnz, p]
+      // we used ids as input here just to do shape inference
+
+      shape_inference::ShapeHandle grad_shape;
+      shape_inference::ShapeHandle ids_shape;
+      shape_inference::ShapeHandle offsets_shape;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &grad_shape));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 1, &ids_shape));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &offsets_shape));
+      c->set_output(0, c->Matrix(c->Dim(ids_shape, 0), c->Dim(grad_shape, 1)));
+      return Status::OK();
+    });
+
+}  // namespace tensorflow
