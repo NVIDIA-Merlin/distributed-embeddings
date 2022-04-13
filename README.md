@@ -1,4 +1,8 @@
-# [Distributed Embeddings](https://github.com/NVIDIA-Merlin/distributed-embeddings) | [Documentation]( https://nvidia-merlin.github.io/distributed-embeddings/main/Introduction.html)
+# [Distributed Embeddings](https://github.com/NVIDIA-Merlin/distributed-embeddings)
+
+[![Documentation](https://img.shields.io/badge/documentation-blue.svg)](https://nvidia-merlin.github.io/distributed-embeddings/Introduction.html)
+[![LICENSE](https://img.shields.io/github/license/NVIDIA-Merlin/NVTabular)](https://github.com/NVIDIA-Merlin/distributed-embeddingsb/blob/main/LICENSE)
+
 distributed-embeddings is a library for building large embedding based (e.g. recommender) models in Tensorflow 2. It provides a scalable model parallel wrapper that automatically distribute embedding tables to multiple GPUs, as well as efficient embedding operations that cover and extend Tensorflow's embedding functionalities.
 
 ## Features
