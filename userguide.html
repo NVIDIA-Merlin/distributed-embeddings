@@ -1,0 +1,392 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Distributed Model Parallel &mdash; distributed-embeddings  documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/jquery.fancybox.min.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/glpi.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="distributed-embeddings  documentation" href="index.html"/>
+        <link rel="next" title="embedding" href="embedding.html"/>
+        <link rel="prev" title="Distributed Embeddings" href="Introduction.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> distributed-embeddings
+          
+
+          
+          </a>
+
+          
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="Introduction.html">Distributed Embeddings</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Distributed Model Parallel</a></li>
+<li class="toctree-l1"><a class="reference internal" href="#embedding-layers">Embedding Layers</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#examples">Examples:</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="#larger-than-gpu-memory-table">Larger than GPU memory table</a></li>
+<li class="toctree-l1"><a class="reference internal" href="#shared-embedding">Shared Embedding</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Package Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="embedding.html">embedding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dist_model_parallel.html">dist_model_parallel</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">distributed-embeddings</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>Distributed Model Parallel</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/userguide.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <div class="rst-breadcrumbs-buttons" role="navigation" aria-label="breadcrumb navigation">
+      
+        <a href="embedding.html" class="btn btn-neutral float-right" title="embedding" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="Introduction.html" class="btn btn-neutral" title="Distributed Embeddings" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+  </div>
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <section id="distributed-model-parallel">
+<h1>Distributed Model Parallel<a class="headerlink" href="#distributed-model-parallel" title="Permalink to this headline">¶</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.dist_model_parallel</span></code> is a tool to enable model parallel
+training by changing only three lines of your script. It can also be
+used alongside data parallel to form hybrid parallel training. Users can
+easily experiment large scale embeddings beyond single GPU’s memory
+capacity without complex code to handle cross-worker communication.
+Example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">dist_model_parallel</span> <span class="k">as</span> <span class="nn">dmp</span>
+
+<span class="k">class</span> <span class="nc">MyEmbeddingModel</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+  <span class="k">def</span>  <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="o">...</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">embedding_layers</span> <span class="o">=</span> <span class="p">[</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="o">*</span><span class="n">size</span><span class="p">)</span> <span class="k">for</span> <span class="n">size</span> <span class="ow">in</span> <span class="n">table_sizes</span><span class="p">]</span>
+    <span class="c1"># add this line to wrap list of embedding layers used in the model</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">embedding_layers</span> <span class="o">=</span> <span class="n">dmp</span><span class="o">.</span><span class="n">DistributedEmbedding</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">embedding_layers</span><span class="p">)</span>
+  <span class="k">def</span> <span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>
+    <span class="c1"># embedding_outputs = [e(i) for e, i in zip(self.embedding_layers, inputs)]</span>
+    <span class="n">embedding_outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embedding_layers</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+    <span class="o">...</span>
+</pre></div>
+</div>
+<p>To work with Horovod data parallel, replace Horovod <code class="docutils literal notranslate"><span class="pre">GradientTape</span></code> and
+broadcast. Take following example directly from Horovod
+<a class="reference external" href="https://horovod.readthedocs.io/en/stable/tensorflow.html">documents</a>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@tf</span><span class="o">.</span><span class="n">function</span>
+<span class="k">def</span> <span class="nf">training_step</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">first_batch</span><span class="p">):</span>
+  <span class="k">with</span> <span class="n">tf</span><span class="o">.</span><span class="n">GradientTape</span><span class="p">()</span> <span class="k">as</span> <span class="n">tape</span><span class="p">:</span>
+    <span class="n">probs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+    <span class="n">loss_value</span> <span class="o">=</span> <span class="n">loss</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">probs</span><span class="p">)</span>
+
+  <span class="c1"># Change Horovod Gradient Tape to dmp tape</span>
+  <span class="c1"># tape = hvd.DistributedGradientTape(tape)</span>
+  <span class="n">tape</span> <span class="o">=</span> <span class="n">dmp</span><span class="o">.</span><span class="n">DistributedGradientTape</span><span class="p">(</span><span class="n">tape</span><span class="p">)</span>
+  <span class="n">grads</span> <span class="o">=</span> <span class="n">tape</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">loss_value</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">trainable_variables</span><span class="p">)</span>
+  <span class="n">opt</span><span class="o">.</span><span class="n">apply_gradients</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">grads</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">trainable_variables</span><span class="p">))</span>
+
+  <span class="k">if</span> <span class="n">first_batch</span><span class="p">:</span>
+    <span class="c1"># Change Horovod broadcast_variables to dmp&#39;s</span>
+    <span class="c1"># hvd.broadcast_variables(model.variables, root_rank=0)</span>
+    <span class="n">dmp</span><span class="o">.</span><span class="n">broadcast_variables</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">variables</span><span class="p">,</span> <span class="n">root_rank</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">loss_value</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.dist_model_parallel</span></code> can be applied both distributed-embeddings and
+Tensorflow embedding layers.</p>
+</section>
+<section id="embedding-layers">
+<h1>Embedding Layers<a class="headerlink" href="#embedding-layers" title="Permalink to this headline">¶</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.Embedding</span></code> combines functionalities of
+<code class="docutils literal notranslate"><span class="pre">tf.keras.layers.Embedding</span></code> and <code class="docutils literal notranslate"><span class="pre">tf.nn.embedding_lookup_sparse</span></code>
+under a unified Keras layer API. The backend is designed to achieve high
+GPU efficiency. Two kinds of inputs are supported. We call them
+fixed/variable hotness as opposite to confusing dense/sparse term
+various TF API uses. The difference is whether all sample in the batch
+contains same number of indices. Inputs are “<a class="reference external" href="https://www.tensorflow.org/api_docs/python/tf/RaggedTensor#potentially_ragged_tensors_2">potentially ragged
+tensor</a>”.
+Fixed hotness inputs are regular <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> while variable hotness
+inputs are 2D <code class="docutils literal notranslate"><span class="pre">RaggedTensor</span></code> with inner ragged dimension. Elements of
+inputs are ids to be looked up. Lookup output from inner most dimension
+are considered from same sample and will be reduced if combiner is used.</p>
+<section id="examples">
+<h2>Examples:<a class="headerlink" href="#examples" title="Permalink to this headline">¶</a></h2>
+<p><strong>One-hot embedding:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">layer</span> <span class="o">=</span> <span class="n">Embedding</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">onehot_input</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">maxval</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">onehot_input</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="go">(16, 1, 64)</span>
+</pre></div>
+</div>
+<p><strong>Fixed hotness embedding:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">fixedhot_input</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span> <span class="n">maxval</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">fixedhot_input</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="go">(16, 7)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">layer</span> <span class="o">=</span> <span class="n">Embedding</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">fixedhot_input</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="go">(16, 7, 64)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">layer</span> <span class="o">=</span> <span class="n">Embedding</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="n">combiner</span><span class="o">=</span><span class="s1">&#39;mean&#39;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">fixedhot_input</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="go">(16, 64)</span>
+</pre></div>
+</div>
+<p><strong>Variable hotness embedding:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">variablehot_input</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">ragged</span><span class="o">.</span><span class="n">constant</span><span class="p">([[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">87</span><span class="p">],</span> <span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="p">[</span><span class="mi">6</span><span class="p">],</span> <span class="p">[</span><span class="mi">929</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">variablehot_input</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="go">(5, None)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">layer</span> <span class="o">=</span> <span class="n">Embedding</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">variablehot_input</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="go">(5, None, 64)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">layer</span> <span class="o">=</span> <span class="n">Embedding</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="n">combiner</span><span class="o">=</span><span class="s1">&#39;sum&#39;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">variablehot_input</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="go">(5, 64)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="larger-than-gpu-memory-table">
+<h1>Larger than GPU memory table<a class="headerlink" href="#larger-than-gpu-memory-table" title="Permalink to this headline">¶</a></h1>
+<p>If single embedding table exceeds GPU memory, or portion of GPU memory
+depends on the optimizer, we have to split the embedding table and
+distribute them to multiple GPU. Currently distributed-embeddings supports column slicing
+embedding tables by passing <code class="docutils literal notranslate"><span class="pre">column_slice_threshold</span></code> to
+DistributedEmbedding, example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Split embedding tables that are larger than 20000000 elements (not Bytes)</span>
+<span class="n">embedding_layers</span> <span class="o">=</span> <span class="n">dmp</span><span class="o">.</span><span class="n">DistributedEmbedding</span><span class="p">(</span><span class="n">embedding_layers</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="o">=</span><span class="mi">20000000</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Embedding will be evenly split into the smallest power of 2 number of
+slices so that each slice is smaller than <code class="docutils literal notranslate"><span class="pre">column_slice_threshold</span></code>.</p>
+</section>
+<section id="shared-embedding">
+<h1>Shared Embedding<a class="headerlink" href="#shared-embedding" title="Permalink to this headline">¶</a></h1>
+<p>It is common that some features share embedding. For example, watched
+video and browsed video can share video embedding. distributed-embeddings supports shared
+embedding by passing a <code class="docutils literal notranslate"><span class="pre">input_table_map</span></code> to DistributedEmbedding,
+example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># The first and the last input both map to embedding 0</span>
+<span class="n">embedding_layers</span> <span class="o">=</span> <span class="n">dmp</span><span class="o">.</span><span class="n">DistributedEmbedding</span><span class="p">(</span>
+    <span class="n">embedding_layers</span><span class="p">,</span>
+    <span class="n">input_table_map</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+</pre></div>
+</div>
+</section>
+
+
+           </div>
+           <div class="articleComments">
+            
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="embedding.html" class="btn btn-neutral float-right" title="embedding" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="Introduction.html" class="btn btn-neutral" title="Distributed Embeddings" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'',
+            LANGUAGE:'None',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/documentation_options.js"></script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/jquery.fancybox.min.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+  
+  <script type="text/javascript">
+    $(function(){
+      $('.image-reference').fancybox();
+    })
+  </script>
+
+</body>
+</html>

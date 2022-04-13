@@ -1,0 +1,329 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Distributed Embeddings &mdash; distributed-embeddings  documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/jquery.fancybox.min.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/glpi.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="distributed-embeddings  documentation" href="index.html"/>
+        <link rel="next" title="Distributed Model Parallel" href="userguide.html"/>
+        <link rel="prev" title="Welcome to distributed-embeddings’s documentation!" href="index.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> distributed-embeddings
+          
+
+          
+          </a>
+
+          
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Distributed Embeddings</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#features">Features</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#distributed-model-parallel-wrapper">Distributed model parallel wrapper</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#embedding-layers">Embedding Layers</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#installation">Installation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#requirements">Requirements</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#containers">Containers</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#build-from-source">Build from source</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#feedback-and-support">Feedback and Support</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="userguide.html">Distributed Model Parallel</a></li>
+<li class="toctree-l1"><a class="reference internal" href="userguide.html#embedding-layers">Embedding Layers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="userguide.html#larger-than-gpu-memory-table">Larger than GPU memory table</a></li>
+<li class="toctree-l1"><a class="reference internal" href="userguide.html#shared-embedding">Shared Embedding</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Package Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="embedding.html">embedding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dist_model_parallel.html">dist_model_parallel</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">distributed-embeddings</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>Distributed Embeddings</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/Introduction.md.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <div class="rst-breadcrumbs-buttons" role="navigation" aria-label="breadcrumb navigation">
+      
+        <a href="userguide.html" class="btn btn-neutral float-right" title="Distributed Model Parallel" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="index.html" class="btn btn-neutral" title="Welcome to distributed-embeddings’s documentation!" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+  </div>
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <section id="distributed-embeddings">
+<h1><a class="reference external" href="https://github.com/NVIDIA-Merlin/distributed-embeddings">Distributed Embeddings</a><a class="headerlink" href="#distributed-embeddings" title="Permalink to this headline">¶</a></h1>
+<p><a class="reference external" href="https://nvidia-merlin.github.io/distributed-embeddings/Introduction.html"><img alt="Documentation" src="https://img.shields.io/badge/documentation-blue.svg" /></a>
+<a class="reference external" href="https://github.com/NVIDIA-Merlin/distributed-embeddingsb/blob/main/LICENSE"><img alt="LICENSE" src="https://img.shields.io/github/license/NVIDIA-Merlin/NVTabular" /></a></p>
+<p>distributed-embeddings is a library for building large embedding based (e.g. recommender) models in Tensorflow 2. It provides a scalable model parallel wrapper that automatically distribute embedding tables to multiple GPUs, as well as efficient embedding operations that cover and extend Tensorflow’s embedding functionalities.</p>
+<section id="features">
+<h2>Features<a class="headerlink" href="#features" title="Permalink to this headline">¶</a></h2>
+<section id="distributed-model-parallel-wrapper">
+<h3>Distributed model parallel wrapper<a class="headerlink" href="#distributed-model-parallel-wrapper" title="Permalink to this headline">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.dist_model_parallel</span></code> is a tool to enable model parallel training by changing only three lines of your script. It can also be used alongside data parallel to form hybrid parallel training. Users can easily experiment large scale embeddings beyond single GPU’s memory capacity without complex code to handle cross-worker communication.</p>
+</section>
+<section id="embedding-layers">
+<h3>Embedding Layers<a class="headerlink" href="#embedding-layers" title="Permalink to this headline">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.Embedding</span></code> combines functionalities of <code class="docutils literal notranslate"><span class="pre">tf.keras.layers.Embedding</span></code> and <code class="docutils literal notranslate"><span class="pre">tf.nn.embedding_lookup_sparse</span></code> under a unified Keras layer API. The backend is designed to achieve high GPU efficiency.</p>
+<p>See more details at <a class="reference external" href="https://nvidia-merlin.github.io/distributed-embeddings/userguide.html">User Guide</a></p>
+</section>
+</section>
+<section id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Permalink to this headline">¶</a></h2>
+<section id="requirements">
+<h3>Requirements<a class="headerlink" href="#requirements" title="Permalink to this headline">¶</a></h3>
+<p>Python 3, CUDA 11 or newer, TensorFlow 2.6.0 or newer</p>
+</section>
+<section id="containers">
+<h3>Containers<a class="headerlink" href="#containers" title="Permalink to this headline">¶</a></h3>
+<p>You can build inside latest NGC TF2 <a class="reference external" href="https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow">image</a>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker pull nvcr.io/nvidia/tensorflow:22.02-tf2-py3
+</pre></div>
+</div>
+</section>
+<section id="build-from-source">
+<h3>Build from source<a class="headerlink" href="#build-from-source" title="Permalink to this headline">¶</a></h3>
+<p>After clone this repository, run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make pip_pkg <span class="o">&amp;&amp;</span> pip install artifacts/*.whl
+</pre></div>
+</div>
+<p>Test installation with:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="o">-</span><span class="n">c</span> <span class="s2">&quot;import distributed_embeddings&quot;</span>
+</pre></div>
+</div>
+<p>You can also run <a class="reference external" href="https://github.com/NVIDIA-Merlin/distributed-embeddings/tree/main/examples/benchmarks/synthetic_models">Synthetic</a> and <a class="reference external" href="https://github.com/NVIDIA-Merlin/distributed-embeddings/blob/main/examples/dlrm/main.py">DLRM</a> examples.</p>
+</section>
+</section>
+<section id="feedback-and-support">
+<h2>Feedback and Support<a class="headerlink" href="#feedback-and-support" title="Permalink to this headline">¶</a></h2>
+<p>If you’d like to contribute to the library directly, see the <a class="reference external" href="https://github.com/NVIDIA-Merlin/distributed-embeddings/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>. We’re particularly interested in contributions or feature requests for our feature engineering and preprocessing operations. To further advance our Merlin Roadmap, we encourage you to share all the details regarding your recommender system pipeline in this <a class="reference external" href="https://developer.nvidia.com/merlin-devzone-survey">survey</a>.</p>
+<p>If you’re interested in learning more about how distributed-embeddings works, see <a class="reference external" href="https://nvidia-merlin.github.io/distributed-embeddings/Introduction.html">documentation</a>.</p>
+</section>
+</section>
+
+
+           </div>
+           <div class="articleComments">
+            
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="userguide.html" class="btn btn-neutral float-right" title="Distributed Model Parallel" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="index.html" class="btn btn-neutral" title="Welcome to distributed-embeddings’s documentation!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2021, NVIDIA.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'',
+            LANGUAGE:'None',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/documentation_options.js"></script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/jquery.fancybox.min.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+  
+  <script type="text/javascript">
+    $(function(){
+      $('.image-reference').fancybox();
+    })
+  </script>
+
+</body>
+</html>
