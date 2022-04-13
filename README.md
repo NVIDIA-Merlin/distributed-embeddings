@@ -14,7 +14,7 @@ distributed-embeddings is a library for building large embedding based (e.g. rec
 
 `distributed_embeddings.Embedding` combines functionalities of `tf.keras.layers.Embedding` and `tf.nn.embedding_lookup_sparse` under a unified Keras layer API. The backend is designed to achieve high GPU efficiency.
 
-See more details at [User Guide](https://nvidia-merlin.github.io/distributed-embeddings/main/userguide.html)
+See more details at [User Guide](https://nvidia-merlin.github.io/distributed-embeddings/userguide.html)
 
 ## Installation
 ### Requirements
@@ -40,4 +40,4 @@ You can also run [Synthetic](https://github.com/NVIDIA-Merlin/distributed-embedd
 
 If you'd like to contribute to the library directly, see the [CONTRIBUTING.md](https://github.com/NVIDIA-Merlin/distributed-embeddings/blob/main/CONTRIBUTING.md). We're particularly interested in contributions or feature requests for our feature engineering and preprocessing operations. To further advance our Merlin Roadmap, we encourage you to share all the details regarding your recommender system pipeline in this [survey](https://developer.nvidia.com/merlin-devzone-survey).
 
-If you're interested in learning more about how distributed-embeddings works, see [documentation]( https://nvidia-merlin.github.io/distributed-embeddings/main/Introduction.html).
+If you're interested in learning more about how distributed-embeddings works, see [documentation]( https://nvidia-merlin.github.io/distributed-embeddings/Introduction.html).
