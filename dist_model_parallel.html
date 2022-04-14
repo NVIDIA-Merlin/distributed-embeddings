@@ -186,6 +186,63 @@
 <h1>dist_model_parallel<a class="headerlink" href="#dist-model-parallel" title="Permalink to this headline">¶</a></h1>
 <section id="distributedembedding">
 <h2><span class="hidden-section">DistributedEmbedding</span><a class="headerlink" href="#distributedembedding" title="Permalink to this headline">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">distributed_embeddings.python.layers.dist_model_parallel.</span></span><span class="sig-name descname"><span class="pre">DistributedEmbedding</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/dist_model_parallel.html#DistributedEmbedding"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding" title="Permalink to this definition">¶</a></dt>
+<dd><p>Distributed embedding wrapper</p>
+<p>This class is a hybrid parallel wrapper around embedding. It handles all to all communication of
+forward and backward of embedding.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>embeddings</strong> (<em>list of keras Embedding layers</em>) – embedding tables to be distributed</p></li>
+<li><p><strong>strategy</strong> (<em>str</em>) – A string indicates how embedding tables are distributed.
+Choices are [“basic”, “memory_balanced”]. Default “basic”</p></li>
+<li><p><strong>column_slice_threshold</strong> (<em>int or None</em>) – If not None, embedding tables with more elements than
+column_slice_threshold will be divide into N even pieces alone embedded width dimension.
+N is smallest power of 2 makes each slice smaller than column_slice_threshold. Default None.</p></li>
+<li><p><strong>row_slice</strong> (<em>TBD</em>) – Describe how which embedding needs to be row sliced</p></li>
+<li><p><strong>dp_input</strong> (<em>bool</em>) – If True, takes data parallel input, i.e. in shape
+[local_batch_size x global_num_embeddings]. Otherwise take model parall input in shape
+[global_batch_size x local_num_embeddings]. Default True.</p></li>
+<li><p><strong>input_table_map</strong> (<em>list or None</em>) – same length list as inputs, map <cite>input[i]</cite>
+to <cite>table[input_table_map[i]]</cite>. None means there are same number of
+inputs/tables and <cite>input[i]</cite> map to <cite>table[i]</cite>. Default None.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.get_weights">
+<span class="sig-name descname"><span class="pre">get_weights</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/dist_model_parallel.html#DistributedEmbedding.get_weights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.get_weights" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the current weights of the layer, as NumPy arrays.</p>
+<p>This override outputs global weights for all tables.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.set_weights">
+<span class="sig-name descname"><span class="pre">set_weights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">weights</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/dist_model_parallel.html#DistributedEmbedding.set_weights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.set_weights" title="Permalink to this definition">¶</a></dt>
+<dd><p>Sets the weights of the layer, from NumPy arrays.</p>
+<p>This override expects global weights for all tables as input.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="distributed_embeddings.python.layers.dist_model_parallel.broadcast_variables">
+<span class="sig-prename descclassname"><span class="pre">distributed_embeddings.python.layers.dist_model_parallel.</span></span><span class="sig-name descname"><span class="pre">broadcast_variables</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_vars</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root_rank</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/dist_model_parallel.html#broadcast_variables"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.dist_model_parallel.broadcast_variables" title="Permalink to this definition">¶</a></dt>
+<dd><p>Broadcasts variables from root rank to all other processes in a process set</p>
+<p>Replace horovod’s broadcast_variables when running hybrid parallel</p>
+<p>See <a class="reference external" href="https://horovod.readthedocs.io/en/stable/api.html">https://horovod.readthedocs.io/en/stable/api.html</a> for more details</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="distributed_embeddings.python.layers.dist_model_parallel.DistributedGradientTape">
+<span class="sig-prename descclassname"><span class="pre">distributed_embeddings.python.layers.dist_model_parallel.</span></span><span class="sig-name descname"><span class="pre">DistributedGradientTape</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/dist_model_parallel.html#DistributedGradientTape"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedGradientTape" title="Permalink to this definition">¶</a></dt>
+<dd><p>Graident tape that supports hybrid parallel</p>
+<p>Replace horovod’s DistributedGradientTape when running hybrid parallel</p>
+<p>See <a class="reference external" href="https://horovod.readthedocs.io/en/stable/api.html">https://horovod.readthedocs.io/en/stable/api.html</a> for more details</p>
+</dd></dl>
+
 </section>
 </section>
 
@@ -209,7 +266,7 @@
 
   <div role="contentinfo">
     <p>
-        &copy; Copyright 2021, NVIDIA.
+        &copy; Copyright 2022, NVIDIA.
 
     </p>
   </div>

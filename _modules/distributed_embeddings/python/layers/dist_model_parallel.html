@@ -1,0 +1,720 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>distributed_embeddings.python.layers.dist_model_parallel &mdash; distributed-embeddings  documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../../../../_static/css/theme.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../../../../_static/jquery.fancybox.min.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../../../../_static/glpi.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="../../../../genindex.html"/>
+        <link rel="search" title="Search" href="../../../../search.html"/>
+    <link rel="top" title="distributed-embeddings  documentation" href="../../../../index.html"/>
+        <link rel="up" title="Module code" href="../../../index.html"/> 
+
+  
+  <script src="../../../../_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="../../../../index.html" class="icon icon-home"> distributed-embeddings
+          
+
+          
+          </a>
+
+          
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../Introduction.html">Distributed Embeddings</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../userguide.html">Distributed Model Parallel</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../userguide.html#embedding-layers">Embedding Layers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../userguide.html#larger-than-gpu-memory-table">Larger than GPU memory table</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../userguide.html#shared-embedding">Shared Embedding</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Package Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../embedding.html">embedding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../dist_model_parallel.html">dist_model_parallel</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">distributed-embeddings</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../../../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="../../../index.html">Module code</a> &raquo;</li>
+        
+      <li>distributed_embeddings.python.layers.dist_model_parallel</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for distributed_embeddings.python.layers.dist_model_parallel</h1><div class="highlight"><pre>
+<span></span><span class="c1"># SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION &amp; AFFILIATES. All rights reserved.</span>
+<span class="c1"># SPDX-License-Identifier: Apache-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1"># http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
+<span class="sd">&quot;&quot;&quot;Distributed Embedding layers and utils&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">tensorflow</span> <span class="k">as</span> <span class="nn">tf</span>
+<span class="kn">from</span> <span class="nn">tensorflow.python.keras.utils</span> <span class="kn">import</span> <span class="n">tf_utils</span>
+<span class="kn">import</span> <span class="nn">horovod.tensorflow</span> <span class="k">as</span> <span class="nn">hvd</span>
+<span class="kn">from</span> <span class="nn">.embedding</span> <span class="kn">import</span> <span class="n">Embedding</span>
+
+
+<span class="k">class</span> <span class="nc">DistEmbeddingStrategy</span><span class="p">():</span>
+  <span class="sd">&quot;&quot;&quot;Distributed embedding strategy</span>
+
+<span class="sd">  Args:</span>
+<span class="sd">    embeddings (list of Embedding): list of unbuilt Embedding layers globally</span>
+<span class="sd">    strategy (str): A string indicates how embedding tables are distributed.</span>
+<span class="sd">        Choices are [“basic”, “memory_balanced”]. Default &quot;basic&quot;</span>
+<span class="sd">    input_table_map (list or None): A list of table ids mapping each input to a table, i.e.,</span>
+<span class="sd">        `input[i]` map to `table[input_table_map[i]]`. None means there are same number of</span>
+<span class="sd">        inputs/tables and `input[i]` map to `table[i]`. Default None.</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+               <span class="n">embeddings</span><span class="p">,</span>
+               <span class="n">world_size</span><span class="p">,</span>
+               <span class="n">rank</span><span class="p">,</span>
+               <span class="n">strategy</span><span class="o">=</span><span class="s2">&quot;basic&quot;</span><span class="p">,</span>
+               <span class="n">input_table_map</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">column_slice_threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">global_configs</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">get_config</span><span class="p">()</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">embeddings</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">=</span> <span class="n">strategy</span>
+    <span class="k">if</span> <span class="n">input_table_map</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="n">input_table_map</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">embeddings</span><span class="p">)))</span>
+    <span class="k">if</span> <span class="n">world_size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">local_configs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_configs</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">local_input_table_map</span> <span class="o">=</span> <span class="n">input_table_map</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">input_ids_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">input_table_map</span><span class="p">)))]</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">table_ids_list</span> <span class="o">=</span> <span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">embeddings</span><span class="p">)))]</span>
+      <span class="k">return</span>
+    <span class="c1"># Create (maybe) sliced configs</span>
+    <span class="n">sliced_configs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sliced_out_ranges</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">create_sliced_configs</span><span class="p">(</span>
+        <span class="n">world_size</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="p">,</span> <span class="n">input_table_map</span><span class="p">)</span>
+    <span class="c1"># Apply strategy and save nested list containing table indices by rank</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">table_ids_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_stragety</span><span class="p">(</span><span class="n">strategy</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">sliced_configs</span><span class="p">)</span>
+    <span class="c1"># Nested list to split embedding output from each rank into tables</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">widths_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="c1"># Nested list containing input indices by rank</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">input_ids_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="c1"># Nested list containing local input to local table map by rank</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">local_map_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="c1"># Nested list containing local configs by rank</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">local_configs_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="c1"># Each worker loop over all rank to get global view of strategy</span>
+    <span class="k">for</span> <span class="n">rank_table_ids</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">table_ids_list</span><span class="p">:</span>
+      <span class="c1"># calculate stats needed for each rank</span>
+      <span class="n">rank_widths</span><span class="p">,</span> <span class="n">rank_input_ids</span><span class="p">,</span> <span class="n">rank_input_map</span><span class="p">,</span> <span class="n">rank_configs</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+      <span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">table_idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">rank_table_ids</span><span class="p">):</span>
+        <span class="n">rank_configs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sliced_configs</span><span class="p">[</span><span class="n">table_idx</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">mapped_idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">input_table_map</span><span class="p">):</span>
+          <span class="k">if</span> <span class="n">table_idx</span> <span class="o">==</span> <span class="n">mapped_idx</span><span class="p">:</span>
+            <span class="n">rank_widths</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rank_configs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s1">&#39;output_dim&#39;</span><span class="p">])</span>
+            <span class="n">rank_input_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+            <span class="n">rank_input_map</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">local_configs_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rank_configs</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">widths_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rank_widths</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">input_ids_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rank_input_ids</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">local_map_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rank_input_map</span><span class="p">)</span>
+    <span class="c1"># List of total embedding widths to split embedding output by rank after alltoall</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">total_local_widths</span> <span class="o">=</span> <span class="p">[</span><span class="nb">sum</span><span class="p">(</span><span class="n">widths</span><span class="p">)</span> <span class="k">for</span> <span class="n">widths</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">widths_list</span><span class="p">]</span>
+    <span class="c1"># List that maps local inputs to local table</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">local_input_table_map</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">local_map_list</span><span class="p">[</span><span class="n">rank</span><span class="p">]</span>
+    <span class="c1"># flatten self.input_ids_list</span>
+    <span class="n">worker_order_input_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span> <span class="k">for</span> <span class="n">sublist</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_ids_list</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">sublist</span><span class="p">]</span>
+    <span class="c1"># List of indices to shuffle worker ordered embedding outputs back to original order</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">rev_global_input_ids</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">index</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">index</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">worker_order_input_ids</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">worker_order_input_ids</span><span class="p">))))</span>
+    <span class="p">]</span>
+    <span class="c1"># List of configs to create local embedding layers</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">local_configs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">local_configs_list</span><span class="p">[</span><span class="n">rank</span><span class="p">]</span>
+
+  <span class="k">def</span> <span class="nf">maybe_slice_table_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">orig_config</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="p">,</span> <span class="n">world_size</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Column slice a embedding config if size exceed column_slice_threshold.</span>
+<span class="sd">    Assume N is smallest power of 2 so that when evenly slice original table into N tables,</span>
+<span class="sd">    each have less than column_slice_threshold elements.</span>
+<span class="sd">    So final number of slices will be min(N, world_size, table_width).</span>
+<span class="sd">    Args:</span>
+<span class="sd">      orig_config (dict): embedding layer config to create slices from</span>
+<span class="sd">      column_slice_threshold (int or None): desired upper bound of elements count in each slice</span>
+<span class="sd">      world_size (int): number of total model parallel worker</span>
+<span class="sd">    Returns:</span>
+<span class="sd">      sliced_config (list): list of embedding layer config that concat into original config</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">column_slice_threshold</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="n">column_slice_threshold</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;inf&#39;</span><span class="p">)</span>
+    <span class="n">table_size</span> <span class="o">=</span> <span class="n">orig_config</span><span class="p">[</span><span class="s1">&#39;input_dim&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">orig_config</span><span class="p">[</span><span class="s1">&#39;output_dim&#39;</span><span class="p">]</span>
+    <span class="n">num_slices</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="k">while</span> <span class="n">table_size</span> <span class="o">&gt;</span> <span class="n">column_slice_threshold</span><span class="p">:</span>
+      <span class="n">num_slices</span> <span class="o">*=</span> <span class="mi">2</span>
+      <span class="n">table_size</span> <span class="o">/=</span> <span class="mi">2</span>
+    <span class="k">if</span> <span class="n">num_slices</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+      <span class="k">return</span> <span class="p">[</span><span class="n">orig_config</span><span class="o">.</span><span class="n">copy</span><span class="p">()]</span>
+    <span class="n">num_slices</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">num_slices</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">orig_config</span><span class="p">[</span><span class="s1">&#39;output_dim&#39;</span><span class="p">])</span>
+    <span class="n">column_per_slice</span> <span class="o">=</span> <span class="n">orig_config</span><span class="p">[</span><span class="s1">&#39;output_dim&#39;</span><span class="p">]</span> <span class="o">//</span> <span class="n">num_slices</span>
+    <span class="n">remainder</span> <span class="o">=</span> <span class="n">orig_config</span><span class="p">[</span><span class="s1">&#39;output_dim&#39;</span><span class="p">]</span> <span class="o">%</span> <span class="n">num_slices</span>
+    <span class="n">sliced_config</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_slices</span><span class="p">):</span>
+      <span class="n">config</span> <span class="o">=</span> <span class="n">orig_config</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+      <span class="n">config</span><span class="p">[</span><span class="s1">&#39;output_dim&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">column_per_slice</span>
+      <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">remainder</span><span class="p">:</span>
+        <span class="n">config</span><span class="p">[</span><span class="s1">&#39;output_dim&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+      <span class="n">sliced_config</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">sliced_config</span>
+
+  <span class="k">def</span> <span class="nf">create_sliced_configs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="p">,</span> <span class="n">input_table_map</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Create column sliced configs from global configs.</span>
+<span class="sd">    This function also calculate ranges of data parallel output needs concat due to this slice.</span>
+<span class="sd">    Args:</span>
+<span class="sd">      world_size (int): number of model parallel workers</span>
+<span class="sd">      column_slice_threshold (int or None): desired upper bound of elements count in each slice</span>
+<span class="sd">      input_table_map (list): A list of table ids mapping each input to a table</span>
+<span class="sd">    Returns:</span>
+<span class="sd">      sliced_configs (list): same length as global configs. each element is a list represent sliced</span>
+<span class="sd">    form of global config at the same position.</span>
+<span class="sd">      sliced_out_ranges (list): each element is list of 2 integers, representing output ranges need</span>
+<span class="sd">    to be concatenated to re-form output due to above slice.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">sliced_configs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">global_config</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_configs</span><span class="p">:</span>
+      <span class="n">maybe_sliced_config</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">maybe_slice_table_column</span><span class="p">(</span><span class="n">global_config</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="p">,</span>
+                                                          <span class="n">world_size</span><span class="p">)</span>
+      <span class="n">sliced_configs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">maybe_sliced_config</span><span class="p">)</span>
+    <span class="c1"># figure out ranges of output that needs concat</span>
+    <span class="c1"># this needs to be in output order, otherwise range modification would fail</span>
+    <span class="n">sliced_out_ranges</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">input_id</span><span class="p">,</span> <span class="n">table_id</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">input_table_map</span><span class="p">):</span>
+      <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sliced_configs</span><span class="p">[</span><span class="n">table_id</span><span class="p">])</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">sliced_out_ranges</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">input_id</span><span class="p">,</span> <span class="n">input_id</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">sliced_configs</span><span class="p">[</span><span class="n">table_id</span><span class="p">])])</span>
+    <span class="k">return</span> <span class="n">sliced_configs</span><span class="p">,</span> <span class="n">sliced_out_ranges</span>
+
+  <span class="c1"># pylint: disable=missing-param-doc,missing-type-doc,missing-raises-doc</span>
+  <span class="k">def</span> <span class="nf">apply_stragety</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">sliced_configs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Distribute tables to workers from sliced config, a nested list.</span>
+<span class="sd">    Returns:</span>
+<span class="sd">      divided_ids (list): world_size length list. Each element is list of</span>
+<span class="sd">    sliced table ids distribute to rank according to position.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">global_ids</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">table_sizes</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">sliced_config</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">sliced_configs</span><span class="p">):</span>
+      <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="n">sliced_config</span><span class="p">:</span>
+        <span class="n">global_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+        <span class="n">table_sizes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;input_dim&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;output_dim&#39;</span><span class="p">])</span>
+
+    <span class="c1"># Round-robin distribute tables onto workers</span>
+    <span class="k">if</span> <span class="n">mode</span> <span class="o">==</span> <span class="s1">&#39;basic&#39;</span><span class="p">:</span>
+      <span class="n">divided_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">global_ids</span><span class="p">[</span><span class="n">i</span><span class="p">::</span><span class="n">world_size</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">world_size</span><span class="p">)]</span>
+    <span class="c1"># Distributed table so that memory is balanced while table count remain even</span>
+    <span class="k">elif</span> <span class="n">mode</span> <span class="o">==</span> <span class="s1">&#39;memory_balanced&#39;</span><span class="p">:</span>
+      <span class="n">sorted_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">idx</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">table_sizes</span><span class="p">,</span> <span class="n">global_ids</span><span class="p">),</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)]</span>
+      <span class="n">divided_ids</span> <span class="o">=</span> <span class="p">[</span>
+          <span class="n">sorted_ids</span><span class="p">[</span><span class="n">i</span><span class="p">::</span><span class="mi">2</span> <span class="o">*</span> <span class="n">world_size</span><span class="p">]</span> <span class="o">+</span> <span class="n">sorted_ids</span><span class="p">[(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">world_size</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">i</span><span class="p">)::</span><span class="mi">2</span> <span class="o">*</span> <span class="n">world_size</span><span class="p">]</span>
+          <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">world_size</span><span class="p">)</span>
+      <span class="p">]</span>
+    <span class="c1"># Try to optimize for total memory first. After sorted by size, table are distributed one by one</span>
+    <span class="c1"># to worker with lowest total size. Memory usage will be more even but table count may not.</span>
+    <span class="k">elif</span> <span class="n">mode</span> <span class="o">==</span> <span class="s1">&#39;memory_optimized&#39;</span><span class="p">:</span>
+      <span class="n">sorted_pairs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">table_sizes</span><span class="p">,</span> <span class="n">global_ids</span><span class="p">)))</span>
+      <span class="n">res</span> <span class="o">=</span> <span class="p">[[</span><span class="mi">0</span><span class="p">,</span> <span class="p">[]]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">world_size</span><span class="p">)]</span>
+      <span class="k">while</span> <span class="n">sorted_pairs</span><span class="p">:</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="n">sorted_pairs</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+        <span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">+=</span> <span class="n">cur</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cur</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
+      <span class="n">divided_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">res</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">F</span><span class="s2">&quot;Unsupported strategy </span><span class="si">{</span><span class="n">strategy</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">divided_ids</span>
+
+
+<div class="viewcode-block" id="DistributedEmbedding"><a class="viewcode-back" href="../../../../dist_model_parallel.html#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding">[docs]</a><span class="k">class</span> <span class="nc">DistributedEmbedding</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Layer</span><span class="p">):</span>
+  <span class="sd">&quot;&quot;&quot;Distributed embedding wrapper</span>
+
+<span class="sd">  This class is a hybrid parallel wrapper around embedding. It handles all to all communication of</span>
+<span class="sd">  forward and backward of embedding.</span>
+
+<span class="sd">  Args:</span>
+<span class="sd">    embeddings (list of keras Embedding layers): embedding tables to be distributed</span>
+<span class="sd">    strategy (str): A string indicates how embedding tables are distributed.</span>
+<span class="sd">        Choices are [“basic”, “memory_balanced”]. Default &quot;basic&quot;</span>
+<span class="sd">    column_slice_threshold (int or None): If not None, embedding tables with more elements than</span>
+<span class="sd">        column_slice_threshold will be divide into N even pieces alone embedded width dimension.</span>
+<span class="sd">        N is smallest power of 2 makes each slice smaller than column_slice_threshold. Default None.</span>
+<span class="sd">    row_slice (TBD): Describe how which embedding needs to be row sliced</span>
+<span class="sd">    dp_input (bool): If True, takes data parallel input, i.e. in shape</span>
+<span class="sd">        [local_batch_size x global_num_embeddings]. Otherwise take model parall input in shape</span>
+<span class="sd">        [global_batch_size x local_num_embeddings]. Default True.</span>
+<span class="sd">    input_table_map (list or None): same length list as inputs, map `input[i]`</span>
+<span class="sd">        to `table[input_table_map[i]]`. None means there are same number of</span>
+<span class="sd">        inputs/tables and `input[i]` map to `table[i]`. Default None.</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+               <span class="n">embeddings</span><span class="p">,</span>
+               <span class="n">strategy</span><span class="o">=</span><span class="s2">&quot;basic&quot;</span><span class="p">,</span>
+               <span class="n">column_slice_threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">row_slice</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">dp_input</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+               <span class="n">input_table_map</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+
+    <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">strategy</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;basic&#39;</span><span class="p">,</span> <span class="s1">&#39;memory_balanced&#39;</span><span class="p">,</span> <span class="s1">&#39;memory_optimized&#39;</span><span class="p">]:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">F</span><span class="s2">&quot;Unsupported shard strategy </span><span class="si">{</span><span class="n">strategy</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">row_slice</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Row slicing embedding is not supported yet!&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Currently assume data parallel ranks == model parallel ranks</span>
+    <span class="c1"># TODO(Deyu): add more control over this with newly added hvd process_set api</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">hvd</span><span class="o">.</span><span class="n">is_initialized</span><span class="p">():</span>
+      <span class="n">hvd</span><span class="o">.</span><span class="n">init</span><span class="p">()</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">size</span><span class="p">()</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">rank</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">rank</span><span class="p">()</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">dp_input</span> <span class="o">=</span> <span class="n">dp_input</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">column_slice_threshold</span> <span class="o">=</span> <span class="n">column_slice_threshold</span>
+    <span class="c1"># get model parallel distribution strategy</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">=</span> <span class="n">DistEmbeddingStrategy</span><span class="p">(</span><span class="n">embeddings</span><span class="p">,</span>
+                                          <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span><span class="p">,</span>
+                                          <span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">,</span>
+                                          <span class="n">strategy</span><span class="p">,</span>
+                                          <span class="n">input_table_map</span><span class="o">=</span><span class="n">input_table_map</span><span class="p">,</span>
+                                          <span class="n">column_slice_threshold</span><span class="o">=</span><span class="n">column_slice_threshold</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">global_configs</span><span class="p">)</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
+    <span class="c1"># create local embeddings</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">local_embedding_layers</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">local_configs</span><span class="p">:</span>
+      <span class="n">config</span><span class="p">[</span><span class="s1">&#39;synchronization&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">VariableSynchronization</span><span class="o">.</span><span class="n">NONE</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">local_embedding_layers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Embedding</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="n">config</span><span class="p">))</span>
+
+  <span class="k">def</span> <span class="nf">_call_base</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-param-doc,missing-type-doc</span>
+    <span class="sd">&quot;&quot;&quot;Call function that do embeddings and communication</span>
+
+<span class="sd">    Currently, it requires same batch_size on all workers.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># get model parallel input from data parallel</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">dp_input</span><span class="p">:</span>
+      <span class="n">comm_dtype</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">int32</span>
+      <span class="k">for</span> <span class="n">inp</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">:</span>
+          <span class="n">comm_dtype</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">int64</span>
+      <span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span><span class="n">tf</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">comm_dtype</span><span class="p">)</span> <span class="k">for</span> <span class="n">inp</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">]</span>
+      <span class="n">local_shapes</span><span class="p">,</span> <span class="n">local_splits</span><span class="p">,</span> <span class="n">global_splits</span><span class="p">,</span> <span class="n">flat_inputs</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+      <span class="k">for</span> <span class="n">rank_input_ids</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">input_ids_list</span><span class="p">:</span>
+        <span class="n">rank_inputs</span> <span class="o">=</span> <span class="p">[</span><span class="n">inputs</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">rank_input_ids</span><span class="p">]</span>
+        <span class="n">local_shapes</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">inp</span><span class="o">.</span><span class="n">shape</span> <span class="k">for</span> <span class="n">inp</span> <span class="ow">in</span> <span class="n">rank_inputs</span><span class="p">])</span>
+        <span class="n">rank_inputs</span> <span class="o">=</span> <span class="p">[</span><span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">inp</span> <span class="ow">in</span> <span class="n">rank_inputs</span><span class="p">]</span>
+        <span class="n">local_splits</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">inp</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">inp</span> <span class="ow">in</span> <span class="n">rank_inputs</span><span class="p">])</span>
+        <span class="n">global_splits</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="n">local_splits</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+        <span class="n">flat_inputs</span> <span class="o">+=</span> <span class="n">rank_inputs</span>
+      <span class="n">inputs</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">flat_inputs</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+      <span class="n">inputs</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">alltoall</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">splits</span><span class="o">=</span><span class="n">global_splits</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;inp_dp_to_mp&#39;</span><span class="p">)</span>
+      <span class="n">inputs</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">world_size</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+      <span class="n">inputs</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">local_splits</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">],</span> <span class="mi">1</span><span class="p">)</span>
+      <span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span>
+          <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">*</span> <span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">+</span> <span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+          <span class="k">for</span> <span class="n">inp</span><span class="p">,</span> <span class="n">shape</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">local_shapes</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">])</span>
+      <span class="p">]</span>
+
+    <span class="c1"># do embedding</span>
+    <span class="n">mp_outs</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">local_embedding_layers</span><span class="p">[</span><span class="n">m</span><span class="p">](</span><span class="n">inp</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">inp</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">local_input_table_map</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span>
+    <span class="p">]</span>
+
+    <span class="c1"># concat last axis to make all2all slice correct, and reshape to make later split easier</span>
+    <span class="c1"># TODO(Deyu): current assume 2D with same batch for all output, ideally should support general case</span>
+    <span class="n">local_bs</span> <span class="o">=</span> <span class="n">inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span>
+    <span class="n">mp_outs</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">mp_outs</span><span class="p">,</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">local_bs</span><span class="p">])</span>
+    <span class="n">dp_outs</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">alltoall</span><span class="p">(</span><span class="n">mp_outs</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;out_mp_to_dp&#39;</span><span class="p">)</span>
+    <span class="n">dp_outs</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="p">[</span><span class="n">local_bs</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tf</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">dp_outs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">total_local_widths</span><span class="p">)</span>
+    <span class="p">]</span>
+    <span class="c1"># split each worker result and re-order using id</span>
+    <span class="n">worker_order_res</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">dp_out</span><span class="p">,</span> <span class="n">widths</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">dp_outs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">widths_list</span><span class="p">):</span>
+      <span class="n">worker_order_res</span> <span class="o">+=</span> <span class="n">tf</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">dp_out</span><span class="p">,</span> <span class="n">widths</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="c1"># reorder outputs to be same as inputs order</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="p">[</span><span class="n">worker_order_res</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">rev_global_input_ids</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+  <span class="k">def</span> <span class="nf">_concat_column_slice_outputs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Concat sliced outputs result from column slicing back together</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">sliced_out_ranges</span><span class="p">:</span>
+      <span class="n">outs</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">outs</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)]</span>
+    <span class="k">return</span> <span class="n">outs</span>
+
+<div class="viewcode-block" id="DistributedEmbedding.set_weights"><a class="viewcode-back" href="../../../../dist_model_parallel.html#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.set_weights">[docs]</a>  <span class="k">def</span> <span class="nf">set_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">weights</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-param-doc,missing-type-doc</span>
+    <span class="sd">&quot;&quot;&quot;Sets the weights of the layer, from NumPy arrays.</span>
+
+<span class="sd">    This override expects global weights for all tables as input.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+      <span class="n">sliced_local_weights</span> <span class="o">=</span> <span class="n">weights</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">slice_info</span> <span class="o">=</span> <span class="p">[[</span><span class="n">rank_tids</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
+                     <span class="k">for</span> <span class="n">rank_tids</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_ids_list</span><span class="p">]</span>
+                    <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">weights</span><span class="p">))]</span>
+      <span class="n">local_weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">weights</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_ids_list</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]]</span>
+      <span class="n">local_info</span> <span class="o">=</span> <span class="p">[</span><span class="n">slice_info</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_ids_list</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]]</span>
+
+      <span class="k">def</span> <span class="nf">_slice_weight_for_rank</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="n">global_rank</span><span class="p">):</span>
+        <span class="n">num_columns</span> <span class="o">=</span> <span class="n">weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">num_slices</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">info</span><span class="p">)</span>
+        <span class="n">column_per_slice</span> <span class="o">=</span> <span class="n">num_columns</span> <span class="o">//</span> <span class="n">num_slices</span>
+        <span class="n">remainder</span> <span class="o">=</span> <span class="n">num_columns</span> <span class="o">%</span> <span class="n">num_slices</span>
+        <span class="n">rank</span> <span class="o">=</span> <span class="n">info</span><span class="p">[:</span><span class="n">global_rank</span><span class="p">]</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">start</span> <span class="o">=</span> <span class="n">column_per_slice</span> <span class="o">*</span> <span class="n">rank</span> <span class="o">+</span> <span class="nb">min</span><span class="p">(</span><span class="n">rank</span><span class="p">,</span> <span class="n">remainder</span><span class="p">)</span>
+        <span class="n">rank</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">column_per_slice</span> <span class="o">*</span> <span class="n">rank</span> <span class="o">+</span> <span class="nb">min</span><span class="p">(</span><span class="n">rank</span><span class="p">,</span> <span class="n">remainder</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">weight</span><span class="p">[:,</span> <span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+
+      <span class="n">sliced_local_weights</span> <span class="o">=</span> <span class="p">[</span>
+          <span class="n">_slice_weight_for_rank</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">)</span>
+          <span class="k">for</span> <span class="n">weight</span><span class="p">,</span> <span class="n">info</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">local_weights</span><span class="p">,</span> <span class="n">local_info</span><span class="p">)</span>
+      <span class="p">]</span>
+    <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">set_weights</span><span class="p">(</span><span class="n">sliced_local_weights</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="DistributedEmbedding.get_weights"><a class="viewcode-back" href="../../../../dist_model_parallel.html#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.get_weights">[docs]</a>  <span class="k">def</span> <span class="nf">get_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Returns the current weights of the layer, as NumPy arrays.</span>
+
+<span class="sd">    This override outputs global weights for all tables.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+      <span class="k">return</span> <span class="p">[</span><span class="n">weight</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">weight</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="p">]</span>
+
+    <span class="c1"># mpi segfault on large sizes so we gather weights chunk by chunk here</span>
+    <span class="n">num_chunks</span> <span class="o">=</span> <span class="mi">8</span>
+    <span class="k">with</span> <span class="n">tf</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s1">&#39;CPU:0&#39;</span><span class="p">):</span>
+      <span class="n">local_weights</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+      <span class="n">chunk_size</span> <span class="o">=</span> <span class="n">local_weights</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">//</span> <span class="n">num_chunks</span>
+      <span class="n">last_size</span> <span class="o">=</span> <span class="n">local_weights</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">chunk_size</span> <span class="o">*</span> <span class="p">(</span><span class="n">num_chunks</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+      <span class="n">chunk_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">chunk_size</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">num_chunks</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="n">last_size</span><span class="p">]</span>
+      <span class="n">local_weights</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">local_weights</span><span class="p">,</span> <span class="n">chunk_sizes</span><span class="p">)</span>
+      <span class="n">all_sizes</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="n">chunk_sizes</span><span class="p">)</span>
+
+      <span class="c1"># collect all chunks and split to reverse allgather concat</span>
+      <span class="n">chunks</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">w</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">local_weights</span><span class="p">):</span>
+        <span class="n">chunks</span> <span class="o">+=</span> <span class="n">tf</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">hvd</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="n">w</span><span class="p">),</span> <span class="n">all_sizes</span><span class="p">[</span><span class="n">i</span><span class="p">::</span><span class="n">num_chunks</span><span class="p">])</span>
+      <span class="c1"># re-construct all local weights from chunks</span>
+      <span class="n">local_weights</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">world_size</span><span class="p">):</span>
+        <span class="n">local_weights</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">chunks</span><span class="p">[</span><span class="n">i</span><span class="p">::</span><span class="bp">self</span><span class="o">.</span><span class="n">world_size</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
+      <span class="c1"># split flat local weights into correct sizes</span>
+      <span class="n">weights</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="k">for</span> <span class="n">local_weight</span><span class="p">,</span> <span class="n">local_configs</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">local_weights</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">local_configs_list</span><span class="p">):</span>
+        <span class="n">local_shapes</span> <span class="o">=</span> <span class="p">[[</span><span class="n">c</span><span class="p">[</span><span class="s1">&#39;input_dim&#39;</span><span class="p">],</span> <span class="n">c</span><span class="p">[</span><span class="s1">&#39;output_dim&#39;</span><span class="p">]]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">local_configs</span><span class="p">]</span>
+        <span class="n">local_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">shape</span> <span class="ow">in</span> <span class="n">local_shapes</span><span class="p">]</span>
+        <span class="n">flat_weights</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">local_weight</span><span class="p">,</span> <span class="n">local_sizes</span><span class="p">)</span>
+        <span class="n">weights</span> <span class="o">+=</span> <span class="p">[</span><span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span> <span class="n">shape</span><span class="p">)</span> <span class="k">for</span> <span class="n">weight</span><span class="p">,</span> <span class="n">shape</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">flat_weights</span><span class="p">,</span> <span class="n">local_shapes</span><span class="p">)]</span>
+      <span class="c1"># restore original table order</span>
+      <span class="c1"># flatten self.strategy.table_ids_list</span>
+      <span class="n">worker_order_table_ids</span> <span class="o">=</span> <span class="p">[</span>
+          <span class="n">item</span> <span class="k">for</span> <span class="n">sublist</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_ids_list</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">sublist</span>
+      <span class="p">]</span>
+      <span class="c1"># Shuffle worker ordered embedding weights(sliced) back to original order.</span>
+      <span class="n">ids_and_weights</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">worker_order_table_ids</span><span class="p">,</span> <span class="n">weights</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+      <span class="c1"># concat sliced weights</span>
+      <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="n">cur_id</span> <span class="o">=</span> <span class="mi">0</span>
+      <span class="n">cur_list</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="k">while</span> <span class="n">ids_and_weights</span><span class="p">:</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="n">ids_and_weights</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cur</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">cur_id</span><span class="p">:</span>
+          <span class="n">cur_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cur</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">cur_list</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span>
+          <span class="n">cur_id</span> <span class="o">=</span> <span class="n">cur</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+          <span class="n">cur_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">cur</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
+      <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">cur_list</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span>
+      <span class="k">return</span> <span class="n">result</span></div>
+
+  <span class="nd">@tf_utils</span><span class="o">.</span><span class="n">shape_type_conversion</span>
+  <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_shape</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">local_embedding_layers</span><span class="p">:</span>
+      <span class="n">layer</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">input_shape</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">built</span> <span class="o">=</span> <span class="kc">True</span>
+
+  <span class="k">def</span> <span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-function-docstring</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+      <span class="n">outputs</span> <span class="o">=</span> <span class="p">[</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">local_embedding_layers</span><span class="p">[</span><span class="n">m</span><span class="p">](</span><span class="n">inp</span><span class="p">)</span>
+          <span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">inp</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">local_input_table_map</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span>
+      <span class="p">]</span>
+      <span class="k">return</span> <span class="n">outputs</span>
+
+    <span class="c1"># TODO(skyw): Revisit logics of selecting call functions for different strategy</span>
+    <span class="n">outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_base</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+    <span class="n">outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_concat_column_slice_outputs</span><span class="p">(</span><span class="n">outputs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">outputs</span></div>
+
+
+<span class="c1"># Monkey patch horovod bcast/tape so we can handle mp/dp vars differently in single backward</span>
+<div class="viewcode-block" id="broadcast_variables"><a class="viewcode-back" href="../../../../dist_model_parallel.html#distributed_embeddings.python.layers.dist_model_parallel.broadcast_variables">[docs]</a><span class="k">def</span> <span class="nf">broadcast_variables</span><span class="p">(</span><span class="n">model_vars</span><span class="p">,</span> <span class="n">root_rank</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-any-param-doc</span>
+  <span class="sd">&quot;&quot;&quot;Broadcasts variables from root rank to all other processes in a process set</span>
+
+<span class="sd">  Replace horovod&#39;s broadcast_variables when running hybrid parallel</span>
+
+<span class="sd">  See https://horovod.readthedocs.io/en/stable/api.html for more details</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">dp_vars</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="n">mp_vars</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">model_vars</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">var</span><span class="o">.</span><span class="n">synchronization</span> <span class="o">==</span> <span class="n">tf</span><span class="o">.</span><span class="n">VariableSynchronization</span><span class="o">.</span><span class="n">NONE</span><span class="p">:</span>
+      <span class="n">mp_vars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">var</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">dp_vars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">var</span><span class="p">)</span>
+  <span class="n">hvd</span><span class="o">.</span><span class="n">broadcast_variables</span><span class="p">(</span><span class="n">dp_vars</span><span class="p">,</span> <span class="n">root_rank</span><span class="o">=</span><span class="n">root_rank</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DistributedGradientTape"><a class="viewcode-back" href="../../../../dist_model_parallel.html#distributed_embeddings.python.layers.dist_model_parallel.DistributedGradientTape">[docs]</a><span class="k">def</span> <span class="nf">DistributedGradientTape</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-param-doc,invalid-name</span>
+  <span class="sd">&quot;&quot;&quot;Graident tape that supports hybrid parallel</span>
+
+<span class="sd">  Replace horovod&#39;s DistributedGradientTape when running hybrid parallel</span>
+
+<span class="sd">  See https://horovod.readthedocs.io/en/stable/api.html for more details</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span> <span class="nf">gradient</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">sources</span><span class="p">,</span> <span class="n">output_gradients</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">gradients</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">gradient</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">sources</span><span class="p">,</span> <span class="n">output_gradients</span><span class="p">)</span>
+    <span class="n">dp_vars</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">dp_grads</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">mp_grads</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">split_infos</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">grad</span><span class="p">,</span> <span class="n">var</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">gradients</span><span class="p">,</span> <span class="n">sources</span><span class="p">):</span>
+      <span class="k">if</span> <span class="n">var</span><span class="o">.</span><span class="n">synchronization</span> <span class="o">==</span> <span class="n">tf</span><span class="o">.</span><span class="n">VariableSynchronization</span><span class="o">.</span><span class="n">NONE</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">grad</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">IndexedSlices</span><span class="p">):</span>
+          <span class="n">mp_grads</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">IndexedSlices</span><span class="p">(</span><span class="n">grad</span><span class="o">.</span><span class="n">values</span> <span class="o">/</span> <span class="n">hvd</span><span class="o">.</span><span class="n">size</span><span class="p">(),</span> <span class="n">grad</span><span class="o">.</span><span class="n">indices</span><span class="p">,</span>
+                                           <span class="n">grad</span><span class="o">.</span><span class="n">dense_shape</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">mp_grads</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">grad</span> <span class="o">/</span> <span class="n">hvd</span><span class="o">.</span><span class="n">size</span><span class="p">())</span>
+        <span class="n">split_infos</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="kc">True</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">mp_grads</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">dp_vars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">var</span><span class="p">)</span>
+        <span class="n">dp_grads</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">grad</span><span class="p">)</span>
+        <span class="n">split_infos</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="kc">False</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">dp_grads</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">dp_grads</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_allreduce_grads</span><span class="p">(</span><span class="n">dp_grads</span><span class="p">,</span> <span class="n">dp_vars</span><span class="p">)</span>  <span class="c1"># pylint: disable=protected-access</span>
+    <span class="c1"># put gradients back in original order</span>
+    <span class="n">grads</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">info</span> <span class="ow">in</span> <span class="n">split_infos</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">info</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+        <span class="n">grads</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mp_grads</span><span class="p">[</span><span class="n">info</span><span class="p">[</span><span class="mi">1</span><span class="p">]])</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">grads</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">dp_grads</span><span class="p">[</span><span class="n">info</span><span class="p">[</span><span class="mi">1</span><span class="p">]])</span>
+    <span class="k">return</span> <span class="n">grads</span>
+
+  <span class="n">tape</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">DistributedGradientTape</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+  <span class="nb">setattr</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">tape</span><span class="p">),</span> <span class="s1">&#39;gradient&#39;</span><span class="p">,</span> <span class="n">gradient</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">tape</span></div>
+</pre></div>
+
+           </div>
+           <div class="articleComments">
+            
+           </div>
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2022, NVIDIA.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'../../../../',
+            VERSION:'',
+            LANGUAGE:'None',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="../../../../_static/documentation_options.js"></script>
+      <script type="text/javascript" src="../../../../_static/jquery.js"></script>
+      <script type="text/javascript" src="../../../../_static/underscore.js"></script>
+      <script type="text/javascript" src="../../../../_static/doctools.js"></script>
+      <script type="text/javascript" src="../../../../_static/jquery.fancybox.min.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="../../../../_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+  
+  <script type="text/javascript">
+    $(function(){
+      $('.image-reference').fancybox();
+    })
+  </script>
+
+</body>
+</html>
