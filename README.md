@@ -20,9 +20,9 @@ See more details at [User Guide](https://nvidia-merlin.github.io/distributed-emb
 ### Requirements
 Python 3, CUDA 11 or newer, TensorFlow 2.6.0 or newer
 ### Containers ###
-You can build inside latest NGC TF2 [image](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow):
+You can build inside 22.03 or later NGC TF2 [image](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow):
 ```bash
-docker pull nvcr.io/nvidia/tensorflow:22.02-tf2-py3
+docker pull nvcr.io/nvidia/tensorflow:22.03-tf2-py3
 ```
 ### Build from source
 
