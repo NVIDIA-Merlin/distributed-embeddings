@@ -228,10 +228,8 @@ ND dense input: <cite>(d1,…,dn)</cite>, ND output: <cite>(d1,…,dn-1,output_d
 <dd><p>Creates the variables of the layer (optional, for subclass implementers).</p>
 <p>This is a method that implementers of subclasses of <cite>Layer</cite> or <cite>Model</cite>
 can override if they need a state-creation step in-between
-layer instantiation and layer call. It is invoked automatically before
-the first execution of <cite>call()</cite>.</p>
-<p>This is typically used to create the weights of <cite>Layer</cite> subclasses
-(at the discretion of the subclass implementer).</p>
+layer instantiation and layer call.</p>
+<p>This is typically used to create the weights of <cite>Layer</cite> subclasses.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><p><strong>input_shape</strong> – Instance of <cite>TensorShape</cite>, or list of instances of
@@ -245,9 +243,9 @@ the first execution of <cite>call()</cite>.</p>
 <dt class="sig sig-object py" id="distributed_embeddings.python.layers.embedding.Embedding.compute_output_shape">
 <span class="sig-name descname"><span class="pre">compute_output_shape</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_shape</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#distributed_embeddings.python.layers.embedding.Embedding.compute_output_shape" title="Permalink to this definition">¶</a></dt>
 <dd><p>Computes the output shape of the layer.</p>
-<p>This method will cause the layer’s state to be built, if that has not
-happened before. This requires that the layer will later be used with
-inputs that match the input shape provided here.</p>
+<p>If the layer has not been built, this method will call <cite>build</cite> on the
+layer. This assumes that the layer will later be used with inputs that
+match the input shape provided here.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><p><strong>input_shape</strong> – Shape tuple (tuple of integers)

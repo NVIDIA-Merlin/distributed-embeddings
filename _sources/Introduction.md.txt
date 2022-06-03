@@ -18,7 +18,7 @@ See more details at [User Guide](https://nvidia-merlin.github.io/distributed-emb
 
 ## Installation
 ### Requirements
-Python 3, CUDA 11 or newer, TensorFlow 2.6.0 or newer
+Python 3, CUDA 11 or newer, TensorFlow 2
 ### Containers ###
 You can build inside 22.03 or later NGC TF2 [image](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow):
 ```bash
