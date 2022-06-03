@@ -158,7 +158,7 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     optimizer.apply_gradients(zip(ref_grads, ref_model.variables))
     optimizer.apply_gradients(zip(test_grads, test_model.variables))
     ref_weights = ref_model.get_weights()
-    test_weights = test_model.dist_embeddings.get_weights() + test_model.dense.get_weights()
+    test_weights = test_model.dist_embeddings.get_weights(True) + test_model.dense.get_weights()
 
     for ref_w, test_w in zip(ref_weights, test_weights):
       # assert close here since order of accumulations(inputs and batch dim) might have changed
@@ -268,6 +268,18 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
 
     dp_inputs, _ = self.gen_inputs(table_sizes)
     self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
+
+  def test_column_slice_dup_worker(self):
+    table_sizes = [[10, 4], [11, 2], [4, 2], [4, 2]]
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes,
+                                    distribute=True,
+                                    strategy='memory_balanced',
+                                    dp_input=False,
+                                    column_slice_threshold=10)
+    mp_input_ids = test_model.dist_embeddings.strategy.input_ids_list[self.hvd_rank]
+    dp_inputs, mp_inputs = self.gen_inputs(table_sizes, mp_input_ids=mp_input_ids)
+    self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
 
 
 if __name__ == "__main__":

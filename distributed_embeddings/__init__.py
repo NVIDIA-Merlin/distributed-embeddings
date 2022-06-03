@@ -15,3 +15,4 @@
 """Distributed embedding API."""
 
 from distributed_embeddings.python.ops.embedding_lookup_ops import embedding_lookup
+from .version import __version__

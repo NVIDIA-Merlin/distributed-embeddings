@@ -11,6 +11,7 @@ echo "=== Copy TensorFlow Custom op files"
 cp setup.py "${TMPDIR}"
 cp MANIFEST.in "${TMPDIR}"
 cp requirements.txt "${TMPDIR}"
+cp version.txt "${TMPDIR}"
 rsync -avm -L --exclude='*_test.py' distributed_embeddings "${TMPDIR}"
 
 pushd ${TMPDIR}
