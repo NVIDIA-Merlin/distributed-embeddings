@@ -37,10 +37,10 @@ all: $(TARGET_LIB)
 	$(NVCC) -c -o $@ $< $(CFLAGS) -I. -DGOOGLE_CUDA=1 -gencode arch=compute_60,code=sm_60 -gencode arch=compute_70,code=sm_70 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_86,code=sm_86 -x cu -Xcompiler -fPIC --expt-relaxed-constexpr
 
 %_kernels.cc.o: distributed_embeddings/cc/kernels/%_kernels.cc distributed_embeddings/cc/kernels/%.h
-	$(CXX) -c -o $@ $< $(CFLAGS) -Wall -fPIC -I/usr/local/cuda/targets/x86_64-linux/include
+	$(CXX) -c -o $@ $< $(CFLAGS) -Wall -fPIC -I/usr/local/cuda/include
 
 $(TARGET_LIB): $(NVCC_OBJS) $(CXX_OBJS) distributed_embeddings/cc/ops/embedding_lookup_ops.cc
-	$(CXX) $(CFLAGS) -fPIC -o $@ $^ $(LDFLAGS) -lnvToolsExt -L/usr/local/cuda/targets/x86_64-linux/lib
+	$(CXX) $(CFLAGS) -fPIC -o $@ $^ $(LDFLAGS) -L/usr/local/cuda/lib64
 
 pip_pkg: $(TARGET_LIB)
 	bash build_pip_pkg.sh
