@@ -224,12 +224,11 @@
 <span class="sd">      the `embeddings` matrix (see `keras.constraints`).</span>
 <span class="sd">    combiner (str): Reduction method, [&#39;sum&#39;, &#39;mean&#39;] or None. Default None.</span>
 
-<span class="sd">  When combiner is not None, only dense inputs with rank &gt;=2 and ragged inputs with</span>
-<span class="sd">  rank==2 are supported. Embedding picked from last input dimension will be reduced.</span>
-
-<span class="sd">  In other word, support one of the following input/output shape combination:</span>
-<span class="sd">  ND dense input: `(d1,...,dn)`, ND output: `(d1,...,dn-1,output_dim)`, N&gt;=2</span>
-<span class="sd">  2D ragged input: `(batch_size, ragged_dim)`, 2D output: `(batch_size, output_dim)`</span>
+<span class="sd">  When combiner is not None, supported input and their respectively output shape are:</span>
+<span class="sd">    N-D `Tensor`: `(d1,...,dn)`, output shape: `(d1,...,dn-1,output_dim)`, N &gt;= 2</span>
+<span class="sd">    2-D `RaggedTensor`: `(batch_size, ragged_dim)`, output shape: `(batch_size, output_dim)`</span>
+<span class="sd">    2-D `SparseTensor`: `(batch_size, max_hotness)`, output shape: `(batch_size, output_dim)`</span>
+<span class="sd">  Embedding picked from last input dimension will be reduced with given combiner.</span>
 <span class="sd">  &quot;&quot;&quot;</span>
 
   <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
@@ -391,7 +390,7 @@
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'../../../../',
             VERSION:'',
-            LANGUAGE:'None',
+            LANGUAGE:'en',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,
@@ -401,7 +400,9 @@
       <script type="text/javascript" src="../../../../_static/documentation_options.js"></script>
       <script type="text/javascript" src="../../../../_static/jquery.js"></script>
       <script type="text/javascript" src="../../../../_static/underscore.js"></script>
+      <script type="text/javascript" src="../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
       <script type="text/javascript" src="../../../../_static/doctools.js"></script>
+      <script type="text/javascript" src="../../../../_static/sphinx_highlight.js"></script>
       <script type="text/javascript" src="../../../../_static/jquery.fancybox.min.js"></script>
 
   

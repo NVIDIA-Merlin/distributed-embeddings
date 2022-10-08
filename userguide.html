@@ -6,7 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+  <meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
@@ -186,7 +186,7 @@
            <div itemprop="articleBody">
             
   <section id="distributed-model-parallel">
-<h1>Distributed Model Parallel<a class="headerlink" href="#distributed-model-parallel" title="Permalink to this headline">¶</a></h1>
+<h1>Distributed Model Parallel<a class="headerlink" href="#distributed-model-parallel" title="Permalink to this heading">¶</a></h1>
 <p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.dist_model_parallel</span></code> is a tool to enable model parallel
 training by changing only three lines of your script. It can also be
 used alongside data parallel to form hybrid parallel training. Users can
@@ -233,7 +233,7 @@ broadcast. Take following example directly from Horovod
 Tensorflow embedding layers.</p>
 </section>
 <section id="embedding-layers">
-<h1>Embedding Layers<a class="headerlink" href="#embedding-layers" title="Permalink to this headline">¶</a></h1>
+<h1>Embedding Layers<a class="headerlink" href="#embedding-layers" title="Permalink to this heading">¶</a></h1>
 <p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.Embedding</span></code> combines functionalities of
 <code class="docutils literal notranslate"><span class="pre">tf.keras.layers.Embedding</span></code> and <code class="docutils literal notranslate"><span class="pre">tf.nn.embedding_lookup_sparse</span></code>
 under a unified Keras layer API. The backend is designed to achieve high
@@ -247,7 +247,7 @@ inputs are 2D <code class="docutils literal notranslate"><span class="pre">Ragge
 inputs are ids to be looked up. Lookup output from inner most dimension
 are considered from same sample and will be reduced if combiner is used.</p>
 <section id="examples">
-<h2>Examples:<a class="headerlink" href="#examples" title="Permalink to this headline">¶</a></h2>
+<h2>Examples:<a class="headerlink" href="#examples" title="Permalink to this heading">¶</a></h2>
 <p><strong>One-hot embedding:</strong></p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">layer</span> <span class="o">=</span> <span class="n">Embedding</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span>
 <span class="gp">&gt;&gt;&gt; </span><span class="n">onehot_input</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">maxval</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
@@ -282,7 +282,7 @@ are considered from same sample and will be reduced if combiner is used.</p>
 </section>
 </section>
 <section id="larger-than-gpu-memory-table">
-<h1>Larger than GPU memory table<a class="headerlink" href="#larger-than-gpu-memory-table" title="Permalink to this headline">¶</a></h1>
+<h1>Larger than GPU memory table<a class="headerlink" href="#larger-than-gpu-memory-table" title="Permalink to this heading">¶</a></h1>
 <p>If single embedding table exceeds GPU memory, or portion of GPU memory
 depends on the optimizer, we have to split the embedding table and
 distribute them to multiple GPU. Currently distributed-embeddings supports column slicing
@@ -296,7 +296,7 @@ DistributedEmbedding, example:</p>
 slices so that each slice is smaller than <code class="docutils literal notranslate"><span class="pre">column_slice_threshold</span></code>.</p>
 </section>
 <section id="shared-embedding">
-<h1>Shared Embedding<a class="headerlink" href="#shared-embedding" title="Permalink to this headline">¶</a></h1>
+<h1>Shared Embedding<a class="headerlink" href="#shared-embedding" title="Permalink to this heading">¶</a></h1>
 <p>It is common that some features share embedding. For example, watched
 video and browsed video can share video embedding. distributed-embeddings supports shared
 embedding by passing a <code class="docutils literal notranslate"><span class="pre">input_table_map</span></code> to DistributedEmbedding,
@@ -354,7 +354,7 @@ example:</p>
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
             VERSION:'',
-            LANGUAGE:'None',
+            LANGUAGE:'en',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,
@@ -364,7 +364,9 @@ example:</p>
       <script type="text/javascript" src="_static/documentation_options.js"></script>
       <script type="text/javascript" src="_static/jquery.js"></script>
       <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/_sphinx_javascript_frameworks_compat.js"></script>
       <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/sphinx_highlight.js"></script>
       <script type="text/javascript" src="_static/jquery.fancybox.min.js"></script>
 
   

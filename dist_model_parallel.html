@@ -6,7 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+  <meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
@@ -109,7 +109,16 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="embedding.html">embedding</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">dist_model_parallel</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#distributedembedding"><span class="hidden-section">DistributedEmbedding</span></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#distributedembedding"><span class="hidden-section">DistributedEmbedding</span></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding"><code class="docutils literal notranslate"><span class="pre">DistributedEmbedding</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.get_weights"><code class="docutils literal notranslate"><span class="pre">DistributedEmbedding.get_weights()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.set_weights"><code class="docutils literal notranslate"><span class="pre">DistributedEmbedding.set_weights()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#distributed_embeddings.python.layers.dist_model_parallel.broadcast_variables"><code class="docutils literal notranslate"><span class="pre">broadcast_variables()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedGradientTape"><code class="docutils literal notranslate"><span class="pre">DistributedGradientTape()</span></code></a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -183,9 +192,9 @@
            <div itemprop="articleBody">
             
   <section id="dist-model-parallel">
-<h1>dist_model_parallel<a class="headerlink" href="#dist-model-parallel" title="Permalink to this headline">¶</a></h1>
+<h1>dist_model_parallel<a class="headerlink" href="#dist-model-parallel" title="Permalink to this heading">¶</a></h1>
 <section id="distributedembedding">
-<h2><span class="hidden-section">DistributedEmbedding</span><a class="headerlink" href="#distributedembedding" title="Permalink to this headline">¶</a></h2>
+<h2><span class="hidden-section">DistributedEmbedding</span><a class="headerlink" href="#distributedembedding" title="Permalink to this heading">¶</a></h2>
 <dl class="py class">
 <dt class="sig sig-object py" id="distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">distributed_embeddings.python.layers.dist_model_parallel.</span></span><span class="sig-name descname"><span class="pre">DistributedEmbedding</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/dist_model_parallel.html#DistributedEmbedding"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding" title="Permalink to this definition">¶</a></dt>
@@ -193,7 +202,7 @@
 <p>This class is a hybrid parallel wrapper around embedding. It handles all to all communication of
 forward and backward of embedding.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>embeddings</strong> (<em>list of keras Embedding layers</em>) – embedding tables to be distributed</p></li>
 <li><p><strong>strategy</strong> (<em>str</em>) – A string indicates how embedding tables are distributed.
@@ -213,16 +222,35 @@ inputs/tables and <cite>input[i]</cite> map to <cite>table[i]</cite>. Default No
 </dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.get_weights">
-<span class="sig-name descname"><span class="pre">get_weights</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/dist_model_parallel.html#DistributedEmbedding.get_weights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.get_weights" title="Permalink to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">get_weights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">all_ranks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/dist_model_parallel.html#DistributedEmbedding.get_weights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.get_weights" title="Permalink to this definition">¶</a></dt>
 <dd><p>Returns the current weights of the layer, as NumPy arrays.</p>
-<p>This override outputs global weights for all tables.</p>
+<p>This override outputs global weights for all tables.
+:Parameters: <strong>all_ranks</strong> (<em>bool</em>) – If true, return weights in all ranks, otherwise only in rank 0.</p>
+<blockquote>
+<div><p>Default False.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>result (list)</em> – List of weight tensors.</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.set_weights">
-<span class="sig-name descname"><span class="pre">set_weights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">weights</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/dist_model_parallel.html#DistributedEmbedding.set_weights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.set_weights" title="Permalink to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">set_weights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">weights</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chunk</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">134217728</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_lock</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/dist_model_parallel.html#DistributedEmbedding.set_weights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.set_weights" title="Permalink to this definition">¶</a></dt>
 <dd><p>Sets the weights of the layer, from NumPy arrays.</p>
-<p>This override expects global weights for all tables as input.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>weights</strong> (<em>list</em>) – list containing global weights for all table.
+item in the list can be either numpy array or file path to load from.</p></li>
+<li><p><strong>chunk</strong> (<em>int</em>) – max number of elements per chunk when set weight on GPU by chunks.
+this will be round to number of rows base on weight shape.</p></li>
+<li><p><strong>use_lock</strong> (<em>bool</em>) – If true, set weights rank by rank in lock step to avoid OOM. Default False.</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 </dd></dl>
@@ -289,7 +317,7 @@ inputs/tables and <cite>input[i]</cite> map to <cite>table[i]</cite>. Default No
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
             VERSION:'',
-            LANGUAGE:'None',
+            LANGUAGE:'en',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,
@@ -299,7 +327,9 @@ inputs/tables and <cite>input[i]</cite> map to <cite>table[i]</cite>. Default No
       <script type="text/javascript" src="_static/documentation_options.js"></script>
       <script type="text/javascript" src="_static/jquery.js"></script>
       <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/_sphinx_javascript_frameworks_compat.js"></script>
       <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/sphinx_highlight.js"></script>
       <script type="text/javascript" src="_static/jquery.fancybox.min.js"></script>
 
   

@@ -6,7 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+  <meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
@@ -110,11 +110,17 @@
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">embedding</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#embedding-layers">Embedding Layers</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#id1"><span class="hidden-section">Embedding</span></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id1"><span class="hidden-section">Embedding</span></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#distributed_embeddings.python.layers.embedding.Embedding"><code class="docutils literal notranslate"><span class="pre">Embedding</span></code></a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#embedding-ops">Embedding Ops</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#embedding-lookup"><span class="hidden-section">embedding_lookup</span></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#embedding-lookup"><span class="hidden-section">embedding_lookup</span></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#distributed_embeddings.python.ops.embedding_lookup_ops.embedding_lookup"><code class="docutils literal notranslate"><span class="pre">embedding_lookup()</span></code></a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -193,17 +199,17 @@
            <div itemprop="articleBody">
             
   <section id="module-distributed_embeddings.python">
-<span id="embedding"></span><h1>embedding<a class="headerlink" href="#module-distributed_embeddings.python" title="Permalink to this headline">¶</a></h1>
+<span id="embedding"></span><h1>embedding<a class="headerlink" href="#module-distributed_embeddings.python" title="Permalink to this heading">¶</a></h1>
 <section id="embedding-layers">
-<h2>Embedding Layers<a class="headerlink" href="#embedding-layers" title="Permalink to this headline">¶</a></h2>
+<h2>Embedding Layers<a class="headerlink" href="#embedding-layers" title="Permalink to this heading">¶</a></h2>
 <section id="id1">
-<h3><span class="hidden-section">Embedding</span><a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h3>
+<h3><span class="hidden-section">Embedding</span><a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h3>
 <dl class="py class">
 <dt class="sig sig-object py" id="distributed_embeddings.python.layers.embedding.Embedding">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">distributed_embeddings.python.layers.embedding.</span></span><span class="sig-name descname"><span class="pre">Embedding</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/embedding.html#Embedding"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.embedding.Embedding" title="Permalink to this definition">¶</a></dt>
 <dd><p>Turns indices into vectors of fixed size.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>input_dim</strong> (<em>int</em>) – Size of the vocabulary, i.e. maximum index + 1.</p></li>
 <li><p><strong>output_dim</strong> (<em>int</em>) – Length of embedding vectors.</p></li>
@@ -217,11 +223,13 @@ the <cite>embeddings</cite> matrix (see <cite>keras.constraints</cite>).</p></li
 </ul>
 </dd>
 </dl>
-<p>When combiner is not None, only dense inputs with rank &gt;=2 and ragged inputs with
-rank==2 are supported. Embedding picked from last input dimension will be reduced.</p>
-<p>In other word, support one of the following input/output shape combination:
-ND dense input: <cite>(d1,…,dn)</cite>, ND output: <cite>(d1,…,dn-1,output_dim)</cite>, N&gt;=2
-2D ragged input: <cite>(batch_size, ragged_dim)</cite>, 2D output: <cite>(batch_size, output_dim)</cite></p>
+<dl class="simple">
+<dt>When combiner is not None, supported input and their respectively output shape are:</dt><dd><p>N-D <cite>Tensor</cite>: <cite>(d1,…,dn)</cite>, output shape: <cite>(d1,…,dn-1,output_dim)</cite>, N &gt;= 2
+2-D <cite>RaggedTensor</cite>: <cite>(batch_size, ragged_dim)</cite>, output shape: <cite>(batch_size, output_dim)</cite>
+2-D <cite>SparseTensor</cite>: <cite>(batch_size, max_hotness)</cite>, output shape: <cite>(batch_size, output_dim)</cite></p>
+</dd>
+</dl>
+<p>Embedding picked from last input dimension will be reduced with given combiner.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="distributed_embeddings.python.layers.embedding.Embedding.build">
 <span class="sig-name descname"><span class="pre">build</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_shape</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#distributed_embeddings.python.layers.embedding.Embedding.build" title="Permalink to this definition">¶</a></dt>
@@ -231,7 +239,7 @@ can override if they need a state-creation step in-between
 layer instantiation and layer call.</p>
 <p>This is typically used to create the weights of <cite>Layer</cite> subclasses.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>input_shape</strong> – Instance of <cite>TensorShape</cite>, or list of instances of
 <cite>TensorShape</cite> if the layer expects a list of inputs
 (one instance per input).</p>
@@ -247,13 +255,13 @@ layer instantiation and layer call.</p>
 layer. This assumes that the layer will later be used with inputs that
 match the input shape provided here.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>input_shape</strong> – Shape tuple (tuple of integers)
 or list of shape tuples (one per output tensor of the layer).
 Shape tuples can include None for free dimensions,
 instead of an integer.</p>
 </dd>
-<dt class="field-even">Returns</dt>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
 <dd class="field-even"><p>An input shape tuple.</p>
 </dd>
 </dl>
@@ -281,7 +289,7 @@ by <cite>Network</cite> (one layer of abstraction above).</p>
 every time it is called. The callers should make a copy of the returned dict
 if they want to modify it.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns</dt>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
 <dd class="field-odd"><p>Python dictionary.</p>
 </dd>
 </dl>
@@ -292,23 +300,23 @@ if they want to modify it.</p>
 </section>
 </section>
 <section id="embedding-ops">
-<h2>Embedding Ops<a class="headerlink" href="#embedding-ops" title="Permalink to this headline">¶</a></h2>
+<h2>Embedding Ops<a class="headerlink" href="#embedding-ops" title="Permalink to this heading">¶</a></h2>
 <section id="embedding-lookup">
-<h3><span class="hidden-section">embedding_lookup</span><a class="headerlink" href="#embedding-lookup" title="Permalink to this headline">¶</a></h3>
+<h3><span class="hidden-section">embedding_lookup</span><a class="headerlink" href="#embedding-lookup" title="Permalink to this heading">¶</a></h3>
 <dl class="py function">
 <dt class="sig sig-object py" id="distributed_embeddings.python.ops.embedding_lookup_ops.embedding_lookup">
 <span class="sig-prename descclassname"><span class="pre">distributed_embeddings.python.ops.embedding_lookup_ops.</span></span><span class="sig-name descname"><span class="pre">embedding_lookup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">param</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ids</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">combiner</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/ops/embedding_lookup_ops.html#embedding_lookup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.ops.embedding_lookup_ops.embedding_lookup" title="Permalink to this definition">¶</a></dt>
 <dd><p>Looks up embeddings for the given <cite>ids</cite> from a embedding tensor.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>param</strong> (<em>Tensor</em>) – A single tensor representing the complete embedding tensor.</p></li>
-<li><p><strong>ids</strong> (<em>Tensor or RaggedTensor</em>) – A 2D <cite>int32</cite> or <cite>int64</cite> <cite>Tensor</cite> containing
-the ids to be looked up in <cite>param</cite>.</p></li>
+<li><p><strong>ids</strong> (<em>Tensor</em>) – A 2D <cite>int32</cite> or <cite>int64</cite> <cite>Tensor</cite> containing the ids to be looked up
+in <cite>param</cite>. Also support <cite>RaggedTensor</cite> and <cite>SparseTensor</cite>.</p></li>
 <li><p><strong>combiner</strong> (<em>string or None</em>) – Reduction method, [‘sum’, ‘mean’] or None. Default None.</p></li>
 </ul>
 </dd>
-<dt class="field-even">Returns</dt>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
 <dd class="field-even"><p><em>Tensor</em> – A <cite>Tensor</cite> with the same type as the tensors in <cite>param</cite>.</p>
 </dd>
 </dl>
@@ -321,7 +329,7 @@ the ids to be looked up in <cite>param</cite>.</p></li>
 <p>Note when ids is RaggedTensor, its values and row_splits are col_index and row_index
 of CSR format hotness matrix, thus can be directly constructed.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Raises</dt>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>TypeError</strong> – If <cite>param</cite> is empty.</p></li>
 <li><p><strong>ValueError</strong> – If <cite>ids</cite> is not 2D tensor.</p></li>
@@ -379,7 +387,7 @@ of CSR format hotness matrix, thus can be directly constructed.</p>
         var DOCUMENTATION_OPTIONS = {
             URL_ROOT:'./',
             VERSION:'',
-            LANGUAGE:'None',
+            LANGUAGE:'en',
             COLLAPSE_INDEX:false,
             FILE_SUFFIX:'.html',
             HAS_SOURCE:  true,
@@ -389,7 +397,9 @@ of CSR format hotness matrix, thus can be directly constructed.</p>
       <script type="text/javascript" src="_static/documentation_options.js"></script>
       <script type="text/javascript" src="_static/jquery.js"></script>
       <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/_sphinx_javascript_frameworks_compat.js"></script>
       <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/sphinx_highlight.js"></script>
       <script type="text/javascript" src="_static/jquery.fancybox.min.js"></script>
 
   
