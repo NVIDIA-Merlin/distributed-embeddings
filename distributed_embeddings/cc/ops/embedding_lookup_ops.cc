@@ -20,6 +20,7 @@
 #include "tensorflow/core/framework/shape_inference.h"
 
 namespace tensorflow {
+
 REGISTER_OP("ReadVariableNoCopy")
     .Input("resource: resource")
     .Output("value: dtype")
@@ -31,39 +32,13 @@ REGISTER_OP("ReadVariableNoCopy")
       return Status::OK();
     });
 
-REGISTER_OP("EmbeddingLookupConstantHotness")
-    .Attr("T: {float}")
+REGISTER_OP("RowToSplit")
     .Attr("Tindices: {int32, int64}")
-    .Input("param: T")
-    .Input("ids: Tindices")
-    .Output("output_params: T")
-    .Attr("combiner:  {'sum', 'mean'}")
+    .Input("row_ids: Tindices")
+    .Input("shape: int32")
+    .Output("row_split: Tindices")
     .SetShapeFn([](shape_inference::InferenceContext* c) {
-      // param: [N,p], ids:[m, n], output: [m, p]
-      shape_inference::ShapeHandle params_shape;
-      shape_inference::ShapeHandle ids_shape;
-      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &params_shape));
-      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &ids_shape));
-      c->set_output(0, c->Matrix(c->Dim(ids_shape, 0), c->Dim(params_shape, 1)));
-      return Status::OK();
-    });
-
-REGISTER_OP("EmbeddingLookupConstantHotnessGrad")
-    .Attr("T: {float}")
-    .Attr("Tindices: {int32, int64}")
-    .Input("grad: T")
-    .Input("ids: Tindices")
-    .Output("grad_param_value: T")
-    .Attr("combiner:  {'sum', 'mean'}")
-    .SetShapeFn([](shape_inference::InferenceContext* c) {
-      // param: [N,p], ids:[m,n], grad: [m,p], grad_param_value: [m*n, p]
-      // we used ids as input here just to do shape inference
-      shape_inference::ShapeHandle grad_shape;
-      shape_inference::ShapeHandle ids_shape;
-      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &grad_shape));
-      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 2, &ids_shape));
-      auto outdim_0 = c->Value(c->Dim(ids_shape, 0)) * c->Value(c->Dim(ids_shape, 1));
-      c->set_output(0, c->Matrix(outdim_0, c->Dim(grad_shape, 1)));
+      // TODO
       return Status::OK();
     });
 
@@ -96,23 +71,19 @@ REGISTER_OP("EmbeddingLookupVariableHotness")
 REGISTER_OP("EmbeddingLookupVariableHotnessGrad")
     .Attr("T: {float}")
     .Attr("Tindices: {int32, int64}")
-    .Input("grad: T")
     .Input("ids: Tindices")
-    .Input("offsets: Tindices")
-    .Output("grad_param_value: T")
+    .Input("offset: Tindices")
+    .Input("grad: T")
+    .Input("param: T")
+    .Output("unique_ids: Tindices")
+    .Output("unique_grad: T")
     .Attr("combiner:  {'sum', 'mean'}")
     .SetShapeFn([](shape_inference::InferenceContext* c) {
-      // vitual input: [m,n], param: [N,p], ids:[nnz], offsets:[m+1]
-      // grad: [m, p], grad_param_value: [nnz, p]
-      // we used ids as input here just to do shape inference
-
       shape_inference::ShapeHandle grad_shape;
-      shape_inference::ShapeHandle ids_shape;
-      shape_inference::ShapeHandle offsets_shape;
-      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &grad_shape));
-      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 1, &ids_shape));
-      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &offsets_shape));
-      c->set_output(0, c->Matrix(c->Dim(ids_shape, 0), c->Dim(grad_shape, 1)));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 2, &grad_shape));
+      c->set_output(0, c->Vector(shape_inference::InferenceContext::kUnknownDim));
+      c->set_output(
+          1, c->Matrix(shape_inference::InferenceContext::kUnknownDim, c->Dim(grad_shape, 1)));
       return Status::OK();
     });
 

@@ -299,7 +299,9 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     # cast before alltoall according to dtype policy
     mp_outs = tf.cast(mp_outs, self.compute_dtype)
     dp_outs = hvd.alltoall(mp_outs, name='out_mp_to_dp')
-    local_bs = inputs[0].shape[0] // self.world_size
+    batch_size = tf.shape(
+        inputs[0], out_type=tf.int32)[0] if inputs[0].shape[0] is None else inputs[0].shape[0]
+    local_bs = batch_size // self.world_size
     num_elements = [local_bs * item for item in self.strategy.widths_list_flat]
     split_outs = tf.split(dp_outs, num_elements)
     worker_order_res = [tf.reshape(split_out, [local_bs, -1]) for split_out in split_outs]
@@ -309,8 +311,7 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     return result
 
   def _concat_column_slice_outputs(self, outs):
-    """Concat sliced outputs result from column slicing back together
-    """
+    """Concat sliced outputs result from column slicing back together"""
     for start, end in self.strategy.sliced_out_ranges:
       outs[start:end] = [tf.concat(outs[start:end], axis=-1)]
     return outs
@@ -414,6 +415,8 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     Args:
       all_ranks (bool): If true, return weights in all ranks, otherwise only in rank 0.
           Default False.
+    Returns:
+      result (list): List of weight tensors.
     """
     # avoid copy-on-read on dense access
     local_weights = [read_var_no_copy(w) for w in self.weights]

@@ -2,3 +2,5 @@
 BasedOnStyle: Google
 ColumnLimit: 100
 DerivePointerAlignment: false
+StatementMacros:
+    - _Pragma

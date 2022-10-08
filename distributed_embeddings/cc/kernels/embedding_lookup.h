@@ -20,36 +20,32 @@
 
 #include <string>
 
+#include "tensorflow/core/framework/op_kernel.h"
+
 namespace tensorflow {
 enum class Combiner { Mean = 0, Sum = 1 };
 inline Combiner StringToEnum(std::string combiner) {
   return combiner == "mean" ? Combiner::Mean : Combiner::Sum;
 }
 
-template <typename Device, typename T, typename Tindices>
-struct EmbeddingLookupConstantHotnessFunctor {
-  void operator()(const Device& d, T* output_ptr, const T* param_ptr, const Tindices* ids_ptr,
-                  Tindices nnz_per_row, Tindices num_rows, Tindices embedding_width,
-                  Combiner combiner) const;
-};
-
-template <typename Device, typename T, typename Tindices>
-struct EmbeddingLookupConstantHotnessGradFunctor {
-  void operator()(const Device& d, T* output_ptr, const T* grad_ptr, Tindices nnz_per_row,
-                  Tindices num_rows, Tindices embedding_width, Combiner combiner) const;
+template <typename Device, typename Tindices>
+struct RowToSplitFunctor {
+  void operator()(const Device& d, Tindices* split_ptr, const Tindices* row_ptr, Tindices num_ids,
+                  Tindices num_rows) const;
 };
 
 template <typename Device, typename T, typename Tindices>
 struct EmbeddingLookupVariableHotnessFunctor {
   void operator()(const Device& d, T* output_ptr, const T* param_ptr, const Tindices* ids_ptr,
                   const Tindices* offsets_ptr, Tindices num_rows, Tindices embedding_width,
-                  Combiner combiner) const;
+                  Combiner combiner, Tindices ave_red_len) const;
 };
 
 template <typename Device, typename T, typename Tindices>
 struct EmbeddingLookupVariableHotnessGradFunctor {
-  void operator()(const Device& d, T* output_ptr, const T* grad_ptr, const Tindices* offsets_ptr,
-                  Tindices num_rows, Tindices embedding_width, Combiner combiner) const;
+  void operator()(OpKernelContext* context, const Tindices* ids_ptr, const Tindices* row_ptr,
+                  const T* grad_ptr, int64_t num_ids, Tindices embedding_width, Tindices num_rows,
+                  int64_t dense_shape_dim0, int64_t max_red_len, Combiner combiner) const;
 };
 
 }  // namespace tensorflow

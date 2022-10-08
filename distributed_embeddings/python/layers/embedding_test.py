@@ -112,6 +112,24 @@ class EmbeddingTest(keras_parameterized.TestCase):
     outputs = model.predict(ragged_factory_ops.constant([[1, 2, 2], [0], [1, 2]], ragged_rank=1))
     self.assertAllEqual(outputs, [[5., 3.], [0., 3.], [4., 3.5]])
 
+  @keras_parameterized.run_all_keras_modes
+  def test_sparse_input_with_mean_combiner(self):
+    layer = embedding.Embedding(input_dim=3,
+                                output_dim=2,
+                                combiner='mean',
+                                weights=[np.array([[0., 3.], [1., 5.], [7., 2.]])])
+    inputs = tf.keras.layers.Input(shape=(None,), dtype=tf.int64, sparse=True)
+    outputs = layer(inputs)
+
+    model = tf.keras.Model(inputs, outputs)
+    model.run_eagerly = testing_utils.should_run_eagerly()
+
+    outputs = model.predict(
+        tf.sparse.SparseTensor(indices=[[0, 0], [0, 1], [0, 2], [1, 0], [2, 0], [2, 1]],
+                               values=[1, 2, 2, 0, 1, 2],
+                               dense_shape=[3, 4]))
+    self.assertAllEqual(outputs, [[5., 3.], [0., 3.], [4., 3.5]])
+
   @combinations.generate(combinations.combine(mode=['eager']))
   def test_2d_input_with_sum_combiner_with_grad(self):
     layer = embedding.Embedding(output_dim=2, input_dim=3, combiner='sum')

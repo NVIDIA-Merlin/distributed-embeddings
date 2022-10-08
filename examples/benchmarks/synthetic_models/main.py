@@ -23,10 +23,10 @@ from absl import flags
 import tensorflow as tf
 from tensorflow import keras
 
-import horovod.tensorflow as hvd
+import horovod.tensorflow.keras as hvd
 
 from config_v3 import synthetic_models_v3
-from synthetic_models import SyntheticModel, InputGenerator
+from synthetic_models import SyntheticModelTFDE, SyntheticModelNative, InputGenerator
 
 from distributed_embeddings.python.layers import dist_model_parallel as dmp
 
@@ -35,13 +35,16 @@ os.environ['TF_XLA_FLAGS'] = '--tf_xla_auto_jit=fusible'
 # pylint: disable=line-too-long
 # yapf: disable
 flags.DEFINE_integer("batch_size", 4, help="Global batch size")
-flags.DEFINE_integer("num_data_batches", 10, help="Number of batches of synthetic data to generate")
+flags.DEFINE_integer("num_data_batches", 1, help="Number of batches of synthetic data to generate")
 flags.DEFINE_float("alpha", 1.05, help="Exponent to generate power law distributed data")
 flags.DEFINE_integer("num_steps", 100, help="Number of steps to benchmark")
 flags.DEFINE_bool("dp_input", False, help="Use data parallel input")
 flags.DEFINE_string("model", "tiny", help="Choose model size to run benchmark")
 flags.DEFINE_enum("optimizer", "sgd", ["sgd", "adagrad", "adam"], help="Optimizer")
 flags.DEFINE_integer("column_slice_threshold", None, help="Upper bound of elements count in each column slice")
+flags.DEFINE_bool("use_model_fit", False, help="Use Keras model.fit")
+flags.DEFINE_string("embedding_device", "/GPU:0", help="device to place embedding. inputs are placed on same device")
+flags.DEFINE_enum("embedding_api", "tfde", ["native", "tfde"], help="embedding to use.")
 # yapf: enable
 # pylint: enable=line-too-long
 
@@ -60,16 +63,30 @@ def main(_):
 
   if FLAGS.batch_size % hvd_size != 0:
     raise ValueError(F"Batch size ({FLAGS.batch_size}) is not divisible by world size ({hvd_size})")
+
   model_config = synthetic_models_v3[FLAGS.model]
-  model = SyntheticModel(model_config,
-                         column_slice_threshold=FLAGS.column_slice_threshold,
-                         dp_input=FLAGS.dp_input)
+  if FLAGS.embedding_api == "tfde":
+    if FLAGS.embedding_device != "/GPU:0":
+      raise ValueError(
+          F"distributed-embeddings api is not supported on device {FLAGS.embedding_device}.")
+    model = SyntheticModelTFDE(model_config,
+                               column_slice_threshold=FLAGS.column_slice_threshold,
+                               dp_input=FLAGS.dp_input)
+  elif FLAGS.embedding_api == "native":
+    if FLAGS.dp_input is False or FLAGS.column_slice_threshold is not None:
+      raise ValueError(
+          "Model parallel inputs and column slicing are not supported with native embedding api.")
+    model = SyntheticModelNative(model_config, embedding_device=FLAGS.embedding_device)
+  else:
+    raise ValueError(F"Unknown embedding api {FLAGS.embedding_api}.")
+
+  mp_input_ids = None if FLAGS.dp_input else model.embeddings.strategy.input_ids_list[hvd_rank]
   input_gen = InputGenerator(model_config,
                              FLAGS.batch_size,
                              alpha=FLAGS.alpha,
-                             input_ids_list=model.embeddings.strategy.input_ids_list,
+                             mp_input_ids=mp_input_ids,
                              num_batches=FLAGS.num_data_batches,
-                             dp_input=FLAGS.dp_input)
+                             embedding_device=FLAGS.embedding_device)
 
   if FLAGS.optimizer == "sgd":
     optimizer = tf.keras.optimizers.SGD(learning_rate=0.03, momentum=0)
@@ -80,41 +97,58 @@ def main(_):
 
   bce = keras.losses.BinaryCrossentropy(reduction=keras.losses.Reduction.NONE, from_logits=True)
 
-  @tf.function
-  def train_step(numerical_features, categorical_features, labels):
-    with tf.GradientTape() as tape:
-      predictions = model((numerical_features, categorical_features))
-      loss = tf.math.reduce_mean(bce(labels, predictions))
-    tape = dmp.DistributedGradientTape(tape)
-    gradients = tape.gradient(loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-    return loss
-
-  # Run one step to warm up
-  numerical_features, cat_features, labels = input_gen[-1]
-  loss = train_step(numerical_features, cat_features, labels)
+  # Run one step to init and broadcast weights
+  (numerical_features, cat_features), labels = input_gen[-1]
+  model((numerical_features, cat_features))
   dmp.broadcast_variables(model.variables, root_rank=0)
-  _ = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
 
-  start = time()
-  # Input data consumes a lot of memory. Instead of generating num_steps batch of synthetic data,
-  # We generate smaller amount of data and loop over them
-  for step in range(FLAGS.num_steps):
-    inputs = input_gen[step % FLAGS.num_data_batches]
-    numerical_features, cat_features, labels = inputs
-    loss = train_step(numerical_features, cat_features, labels)
-    if step == 0:
-      dmp.broadcast_variables(model.variables, root_rank=0)
+  if not FLAGS.use_model_fit:
+
+    @tf.function
+    def train_step(numerical_features, categorical_features, labels):
+      with tf.GradientTape() as tape:
+        predictions = model((numerical_features, categorical_features))
+        loss = tf.math.reduce_mean(bce(labels, predictions))
+      tape = dmp.DistributedGradientTape(tape)
+      gradients = tape.gradient(loss, model.trainable_variables)
+      optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+      return loss
+
+    # Run 5 steps to compile and warm up
+    (numerical_features, cat_features), labels = input_gen[-1]
+    for _ in range(5):
+      loss = train_step(numerical_features, cat_features, labels)
     loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
-    if step % 50 == 0 and hvd_rank == 0:
-      print(F"Benchmark step [{step}/{FLAGS.num_steps}]")
+    # printing initial loss here to force sync before we start timer
+    print(F"Initial loss: {loss:.3f}")
 
-  if hvd_rank == 0:
-    # printing GPU tensor forces a sync. loss was allreduced, printing on one GPU is enough
-    # for computing time so we don't print noisy messages from all ranks
-    print(F"loss: {loss:.3f}")
-    stop = time()
-    print(F"Iteration time: {(stop - start) * 1000 / FLAGS.num_steps:.3f} ms")
+    start = time()
+    # Input data consumes a lot of memory. Instead of generating num_steps batch of synthetic data,
+    # We generate smaller amount of data and loop over them
+    for step in range(FLAGS.num_steps):
+      inputs = input_gen[step % FLAGS.num_data_batches]
+      (numerical_features, cat_features), labels = inputs
+      loss = train_step(numerical_features, cat_features, labels)
+      loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
+      if step % 50 == 0:
+        loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
+        if hvd_rank == 0:
+          print(F"Benchmark step [{step}/{FLAGS.num_steps}]")
+
+    loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
+    if hvd_rank == 0:
+      # printing GPU tensor forces a sync. loss was allreduced, printing on one GPU is enough
+      # for computing time so we don't print noisy messages from all ranks
+      print(F"loss: {loss:.3f}")
+      stop = time()
+      print(F"Iteration time: {(stop - start) * 1000 / FLAGS.num_steps:.3f} ms")
+  else:
+    model.compile(optimizer=optimizer, loss=bce)
+
+    epochs = FLAGS.num_steps // FLAGS.num_data_batches
+    # A broadcast variable callback should be registered once Horovod supports broadcast only data
+    # parallel variables
+    model.fit(input_gen, epochs=epochs, batch_size=FLAGS.batch_size)
 
 
 if __name__ == '__main__':

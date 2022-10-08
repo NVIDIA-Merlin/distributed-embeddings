@@ -52,12 +52,11 @@ class Embedding(tf.keras.layers.Layer):
       the `embeddings` matrix (see `keras.constraints`).
     combiner (str): Reduction method, ['sum', 'mean'] or None. Default None.
 
-  When combiner is not None, only dense inputs with rank >=2 and ragged inputs with
-  rank==2 are supported. Embedding picked from last input dimension will be reduced.
-
-  In other word, support one of the following input/output shape combination:
-  ND dense input: `(d1,...,dn)`, ND output: `(d1,...,dn-1,output_dim)`, N>=2
-  2D ragged input: `(batch_size, ragged_dim)`, 2D output: `(batch_size, output_dim)`
+  When combiner is not None, supported input and their respectively output shape are:
+    N-D `Tensor`: `(d1,...,dn)`, output shape: `(d1,...,dn-1,output_dim)`, N >= 2
+    2-D `RaggedTensor`: `(batch_size, ragged_dim)`, output shape: `(batch_size, output_dim)`
+    2-D `SparseTensor`: `(batch_size, max_hotness)`, output shape: `(batch_size, output_dim)`
+  Embedding picked from last input dimension will be reduced with given combiner.
   """
 
   def __init__(self,

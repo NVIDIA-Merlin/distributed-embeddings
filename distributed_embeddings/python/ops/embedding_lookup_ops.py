@@ -39,8 +39,8 @@ def embedding_lookup(param, ids, combiner=None):
 
   Args:
     param (Tensor): A single tensor representing the complete embedding tensor.
-    ids (Tensor or RaggedTensor): A 2D `int32` or `int64` `Tensor` containing
-      the ids to be looked up in `param`.
+    ids (Tensor): A 2D `int32` or `int64` `Tensor` containing the ids to be looked up
+      in `param`. Also support `RaggedTensor` and `SparseTensor`.
     combiner (string or None): Reduction method, ['sum', 'mean'] or None. Default None.
 
   Returns:
@@ -66,29 +66,40 @@ def embedding_lookup(param, ids, combiner=None):
   if combiner is None:
     return tf.nn.embedding_lookup(param, ids)
   if isinstance(ids, ragged_tensor.RaggedTensor):
+    # assuming no empty sample. tf.shape may fail on earlier tf version with ragged input
+    try:
+      dim_0 = tf.shape(ids, out_type=tf.int32)[0] if ids.shape[0] is None else ids.shape[0]
+    except:  # pylint: disable=bare-except
+      dim_0 = tf.shape(ids.row_splits,
+                       out_type=tf.int32)[0] - 1 if ids.shape[0] is None else ids.shape[0]
+    num_input = tf.shape(
+        ids.values, out_type=tf.int32)[0] if ids.values.shape[0] is None else ids.values.shape[0]
+    if dim_0 == num_input:
+      return tf.nn.embedding_lookup(param, ids.values)
     return ops.embedding_lookup_variable_hotness(read_var_no_copy(param), ids.values,
                                                  ids.row_splits, combiner)
-  return ops.embedding_lookup_constant_hotness(read_var_no_copy(param), ids, combiner)
-
-
-@tf.RegisterGradient("EmbeddingLookupConstantHotness")
-def _embedding_lookup_constant_hotness_grad(op, grad):
-  """The gradients for `embedding_lookup_constant_hotness`.
-  Args:
-    op (object): The `embedding_lookup_constant_hotness` `Operation` that we are differentiating,
-      which we can use to find the inputs and outputs of the original op.
-    grad (Tensor): Gradient with respect to the output of `embedding_lookup_constant_hotness`.
-  Returns:
-    IndexedSlices: A `IndexedSlices` contain sparse gradients with respect to
-      the embedding parameter of `embedding_lookup_constant_hotness`.
-  """
-  param_shape = tf.shape(op.inputs[0])
-  ids = op.inputs[1]
-  grad_param_value = ops.embedding_lookup_constant_hotness_grad(grad,
-                                                                ids,
-                                                                combiner=op.get_attr('combiner'))
-
-  return (tf.IndexedSlices(grad_param_value, tf.reshape(ids, [-1]), param_shape), None)
+  if isinstance(ids, tf.SparseTensor):
+    # sparse is ordered but may not be right-ragged. so we generate offset here
+    # avoid d2h copy in eager mode by using sparsetensor's shape directly
+    dim_0 = tf.shape(ids, out_type=tf.int32)[0] if ids.shape[0] is None else ids.shape[0]
+    num_input = tf.shape(
+        ids.values, out_type=tf.int32)[0] if ids.values.shape[0] is None else ids.values.shape[0]
+    if dim_0 == num_input:
+      return tf.nn.embedding_lookup(param, ids.values)
+    # use custom op to avoid bad XLA bahavior and d2h copy caused by searchsorted
+    row_splits = ops.row_to_split(ids.indices, dim_0)
+    # we really want ids.values and row_splits to be same dtype to simplify things
+    # since max(row_splits) here is likely ~total hotness, int32 should be ok
+    # TODO(Deyu): fuse this cast into above row_to_split function and make always int32
+    return ops.embedding_lookup_variable_hotness(read_var_no_copy(param), ids.values,
+                                                 tf.cast(row_splits, dtype=ids.values.dtype),
+                                                 combiner)
+  dim1 = tf.shape(ids, out_type=tf.int32)[1] if ids.shape[1] is None else ids.shape[1]
+  if dim1 == 1:
+    return tf.nn.embedding_lookup(param, tf.squeeze(ids, [1]))
+  if combiner == 'sum':
+    return tf.reduce_sum(tf.nn.embedding_lookup(param, ids), axis=1)
+  return tf.reduce_mean(tf.nn.embedding_lookup(param, ids), axis=1)
 
 
 @tf.RegisterGradient("EmbeddingLookupVariableHotness")
@@ -102,12 +113,10 @@ def _embedding_lookup_variable_hotness_grad(op, grad):
     IndexedSlices: A `IndexedSlices` contain sparse gradients with respect to
       the embedding parameter of `embedding_lookup_variable_hotness`.
   """
-  ids = op.inputs[1]
+  param_shape = tf.shape(op.inputs[0])
+  flat_ids = tf.reshape(op.inputs[1], [-1])
   offsets = op.inputs[2]
-  grad_param_value = ops.embedding_lookup_variable_hotness_grad(grad,
-                                                                ids,
-                                                                offsets,
-                                                                combiner=op.get_attr('combiner'))
+  unique_ids, unique_grad = ops.embedding_lookup_variable_hotness_grad(
+      flat_ids, offsets, grad, op.inputs[0], combiner=op.get_attr('combiner'))
 
-  param_shape = tf.cast(op.inputs[0].shape, dtype=tf.int64)  # pylint: disable=unexpected-keyword-arg,no-value-for-parameter
-  return (tf.IndexedSlices(grad_param_value, ids, param_shape), None, None)
+  return (tf.IndexedSlices(unique_grad, unique_ids, param_shape), None, None)
