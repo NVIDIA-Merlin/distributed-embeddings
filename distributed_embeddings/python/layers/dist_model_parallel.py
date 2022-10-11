@@ -287,6 +287,8 @@ class DistributedEmbedding(tf.keras.layers.Layer):
           for inp, shape in zip(inputs, local_shapes[self.rank])
       ]
 
+    if len(inputs) != len(self.strategy.local_input_table_map):
+      raise ValueError(F"Expect {self.strategy.local_input_table_map} inputs, got {len(inputs)}.")
     # do embedding
     mp_outs = [
         self.local_embedding_layers[m](inp)
