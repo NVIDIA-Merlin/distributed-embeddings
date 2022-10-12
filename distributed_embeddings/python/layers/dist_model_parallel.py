@@ -361,6 +361,9 @@ class DistributedEmbedding(tf.keras.layers.Layer):
           _slice_weight_for_rank(weight, info, self.rank, offset)
           for weight, info, offset in zip(weights, local_info, index_offset)
       ]
+    else:
+      if isinstance(weights[0], str):
+        weights = [np.load(file=path, mmap_mode='r') for path in weights]
     # variable.assign and copy-on-write creates extra copy of weight that causes OOM
     # so here we scatter update by ~128M elements chunks instead of just do
     # super().set_weights(weights)
