@@ -28,6 +28,7 @@ docker pull nvcr.io/nvidia/tensorflow:22.03-tf2-py3
 
 After clone this repository, run:
 ```bash
+git submodule update --init --recursive
 make pip_pkg && pip install artifacts/*.whl
 ```
 Test installation with:
