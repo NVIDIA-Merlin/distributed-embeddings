@@ -229,7 +229,8 @@
 <section id="build-from-source">
 <h3>Build from source<a class="headerlink" href="#build-from-source" title="Permalink to this heading">¶</a></h3>
 <p>After clone this repository, run:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make pip_pkg <span class="o">&amp;&amp;</span> pip install artifacts/*.whl
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git submodule update --init --recursive
+make pip_pkg <span class="o">&amp;&amp;</span> pip install artifacts/*.whl
 </pre></div>
 </div>
 <p>Test installation with:</p>

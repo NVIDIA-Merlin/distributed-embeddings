@@ -223,13 +223,11 @@ the <cite>embeddings</cite> matrix (see <cite>keras.constraints</cite>).</p></li
 </ul>
 </dd>
 </dl>
-<dl class="simple">
-<dt>When combiner is not None, supported input and their respectively output shape are:</dt><dd><p>N-D <cite>Tensor</cite>: <cite>(d1,…,dn)</cite>, output shape: <cite>(d1,…,dn-1,output_dim)</cite>, N &gt;= 2
-2-D <cite>RaggedTensor</cite>: <cite>(batch_size, ragged_dim)</cite>, output shape: <cite>(batch_size, output_dim)</cite>
-2-D <cite>SparseTensor</cite>: <cite>(batch_size, max_hotness)</cite>, output shape: <cite>(batch_size, output_dim)</cite></p>
-</dd>
-</dl>
-<p>Embedding picked from last input dimension will be reduced with given combiner.</p>
+<p>When combiner is not None, only dense inputs with rank &gt;=2 and ragged inputs with
+rank==2 are supported. Embedding picked from last input dimension will be reduced.</p>
+<p>In other word, support one of the following input/output shape combination:
+ND dense input: <cite>(d1,…,dn)</cite>, ND output: <cite>(d1,…,dn-1,output_dim)</cite>, N&gt;=2
+2D ragged input: <cite>(batch_size, ragged_dim)</cite>, 2D output: <cite>(batch_size, output_dim)</cite></p>
 <dl class="py method">
 <dt class="sig sig-object py" id="distributed_embeddings.python.layers.embedding.Embedding.build">
 <span class="sig-name descname"><span class="pre">build</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_shape</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#distributed_embeddings.python.layers.embedding.Embedding.build" title="Permalink to this definition">¶</a></dt>
@@ -311,8 +309,8 @@ if they want to modify it.</p>
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>param</strong> (<em>Tensor</em>) – A single tensor representing the complete embedding tensor.</p></li>
-<li><p><strong>ids</strong> (<em>Tensor</em>) – A 2D <cite>int32</cite> or <cite>int64</cite> <cite>Tensor</cite> containing the ids to be looked up
-in <cite>param</cite>. Also support <cite>RaggedTensor</cite> and <cite>SparseTensor</cite>.</p></li>
+<li><p><strong>ids</strong> (<em>Tensor or RaggedTensor</em>) – A 2D <cite>int32</cite> or <cite>int64</cite> <cite>Tensor</cite> containing
+the ids to be looked up in <cite>param</cite>.</p></li>
 <li><p><strong>combiner</strong> (<em>string or None</em>) – Reduction method, [‘sum’, ‘mean’] or None. Default None.</p></li>
 </ul>
 </dd>
