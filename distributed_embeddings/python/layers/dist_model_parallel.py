@@ -327,6 +327,8 @@ class DistributedEmbedding(tf.keras.layers.Layer):
       chunk (int): max number of elements per chunk when set weight on GPU by chunks.
           this will be round to number of rows base on weight shape.
       use_lock (bool): If true, set weights rank by rank in lock step to avoid OOM. Default False.
+    Raises:
+      ValueError: If length of weights does not match length of expected weights.
     """
     if use_lock:
       for _ in range(self.rank):
@@ -367,6 +369,10 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     # variable.assign and copy-on-write creates extra copy of weight that causes OOM
     # so here we scatter update by ~128M elements chunks instead of just do
     # super().set_weights(weights)
+    if len(self.weights) != len(weights):
+      raise ValueError(
+          F"You called `set_weights(weights)` on layer {self.name} with a weight list of "
+          F"length {len(weights)}, but the layer was expecting {len(self.weights)} weights.")
     for weight, arr in zip(self.weights, weights):
       if arr.size <= chunk:
         weight.assign(arr)

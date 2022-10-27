@@ -320,6 +320,22 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
       # assert close here since order of accumulations(inputs and batch dim) might have changed
       self.assertAllClose(tf.convert_to_tensor(ref_w), tf.convert_to_tensor(test_w))
 
+  def test_set_weight_uninitialized(self):
+    table_sizes = self.gen_table_sizes()
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='basic')
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+
+    # run a batch to initialize weight tensors
+    _ = ref_model(dp_inputs)
+    ref_weights = ref_model.get_weights()
+    num_tables = len(ref_model.embeddings)
+    with self.assertRaises(ValueError):
+      test_model.dist_embeddings.set_weights(ref_weights[:num_tables])
+      test_model.dense.set_weights(ref_weights[num_tables:])
+
 
 if __name__ == "__main__":
   test.main()
