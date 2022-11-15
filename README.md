@@ -22,7 +22,7 @@ Python 3, CUDA 11 or newer, TensorFlow 2
 ### Containers ###
 You can build inside 22.03 or later NGC TF2 [image](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow):
 ```bash
-docker pull nvcr.io/nvidia/tensorflow:22.03-tf2-py3
+docker pull nvcr.io/nvidia/tensorflow:22.10-tf2-py3
 ```
 ### Build from source
 
