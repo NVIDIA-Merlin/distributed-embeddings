@@ -263,6 +263,20 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     dp_inputs, mp_inputs = self.gen_inputs(table_sizes, input_to_table_map, mp_input_ids)
     self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
 
+  def test_column_slice_merge(self):
+    # test on 4 GPUs
+    table_sizes = [[100, 8], [5, 8], [10, 8], [25, 4]]
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes,
+                                    distribute=True,
+                                    strategy='memory_balanced',
+                                    column_slice_threshold=45)
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+    self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
+    for tables in test_model.dist_embeddings.strategy.table_ids_list:
+      self.assertEqual(len(tables), len(set(tables)))
+
   def test_column_slice_threshold(self):
     table_sizes = self.gen_table_sizes()
     ref_model = EmbeddingListModel(table_sizes, distribute=False)

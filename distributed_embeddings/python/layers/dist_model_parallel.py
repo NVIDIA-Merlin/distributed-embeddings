@@ -66,21 +66,41 @@ class DistEmbeddingStrategy():
     self.local_configs_list = []
     # All of local widths ordered by rank flat into single list
     self.widths_list_flat = []
+    # Temp list to store tables that are merged back
+    merged_ids_list = []
     # Each worker loop over all rank to get global view of strategy
     for rank_table_ids in self.table_ids_list:
-      # calculate stats needed for each rank
-      rank_widths, rank_input_ids, rank_input_map, rank_configs = [], [], [], []
-      for m, table_idx in enumerate(rank_table_ids):
-        rank_configs.append(sliced_configs[table_idx].pop(0))
+      # first merge different shards of same table that ends up on same rank
+      merged_table_ids, rank_configs = [], []
+      for table_idx in rank_table_ids:
+        # this id has been seen on this rank before, merge it with earlier shard
+        if table_idx in merged_table_ids:
+          config_to_merge = sliced_configs[table_idx].pop(0)
+          index_to_merge = merged_table_ids.index(table_idx)
+          rank_configs[index_to_merge]['output_dim'] += config_to_merge['output_dim']
+          # modify output concat ranges
+          for out_range in self.sliced_out_ranges:
+            if out_range[0] == table_idx:
+              out_range[-1] -= 1
+        else:
+          merged_table_ids.append(table_idx)
+          rank_configs.append(sliced_configs[table_idx].pop(0))
+      merged_ids_list.append(merged_table_ids)
+      # calculate stats needed for each rank. we do following to allow inputs share embedding
+      rank_widths, rank_input_ids, rank_input_map = [], [], []
+      for m, table_idx in enumerate(merged_table_ids):
         for k, mapped_idx in enumerate(input_table_map):
           if table_idx == mapped_idx:
-            rank_widths.append(rank_configs[-1]['output_dim'])
+            rank_widths.append(rank_configs[m]['output_dim'])
             rank_input_ids.append(k)
             rank_input_map.append(m)
       self.local_configs_list.append(rank_configs)
       self.widths_list_flat += rank_widths
       self.input_ids_list.append(rank_input_ids)
       self.local_map_list.append(rank_input_map)
+
+    # Reset global view of table ids after merging
+    self.table_ids_list = merged_ids_list
 
     # List that maps local inputs to local table
     self.local_input_table_map = self.local_map_list[rank]
