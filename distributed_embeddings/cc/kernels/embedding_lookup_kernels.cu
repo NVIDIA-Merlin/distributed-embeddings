@@ -250,17 +250,23 @@ __global__ void EmbeddingLookUpVariableHot(const T* params, int embedding_width,
 
 // version for tile size greater than 32, differences are:
 // each tile not within warp so no reduction with shfldown
-// need experimental to support tile > 32
 // have an outer loop to handle arbitrary embedding_width
 template <typename T, typename TIndex, int tile, int row>
 __global__ void EmbeddingLookUpVariableHotWide(const T* params, int embedding_width,
                                                const TIndex* indptr, const TIndex* indices, T* out,
                                                Combiner combiner, TIndex num_rows,
                                                const T* weights) {
-  // reserve shared memory for thread_block_tile usage.
+#if __CUDACC_VER_MAJOR__ >= 12
+  // According to cuda doc, on compute capability 80 or higher, this should consume no memory
+  __shared__ cg::block_tile_memory<tile * 8> shared_for_cg;
+  cg::thread_block thb = cg::this_thread_block(shared_for_cg);
+  auto row_group = cg::tiled_partition<tile>(thb);
+#else
+  // unchanged legacy code. these are under experimental namespace before cuda 12.0
   __shared__ cg::experimental::block_tile_memory<sizeof(T), tile * 8> shared_for_cg;
   cg::thread_block thb = cg::experimental::this_thread_block(shared_for_cg);
   auto row_group = cg::experimental::tiled_partition<tile>(thb);
+#endif
 
   // smem same size as block size.
   extern __shared__ char shmem[];
