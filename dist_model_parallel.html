@@ -229,6 +229,11 @@ inputs/tables and <cite>input[i]</cite> map to <cite>table[i]</cite>. Default No
 <blockquote>
 <div><p>Default False.</p>
 </div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><em>result (list)</em> – List of weight tensors.</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
@@ -244,6 +249,9 @@ item in the list can be either numpy array or file path to load from.</p></li>
 this will be round to number of rows base on weight shape.</p></li>
 <li><p><strong>use_lock</strong> (<em>bool</em>) – If true, set weights rank by rank in lock step to avoid OOM. Default False.</p></li>
 </ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If length of weights does not match length of expected weights.</p>
 </dd>
 </dl>
 </dd></dl>
