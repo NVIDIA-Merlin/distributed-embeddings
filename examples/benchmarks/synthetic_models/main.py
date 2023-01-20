@@ -22,6 +22,7 @@ from absl import flags
 
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras import mixed_precision
 
 import horovod.tensorflow.keras as hvd
 
@@ -45,6 +46,7 @@ flags.DEFINE_integer("column_slice_threshold", None, help="Upper bound of elemen
 flags.DEFINE_bool("use_model_fit", False, help="Use Keras model.fit")
 flags.DEFINE_string("embedding_device", "/GPU:0", help="device to place embedding. inputs are placed on same device")
 flags.DEFINE_enum("embedding_api", "tfde", ["native", "tfde"], help="embedding to use.")
+flags.DEFINE_bool("amp", False, help="Use mixed precision")
 # yapf: enable
 # pylint: enable=line-too-long
 
@@ -60,6 +62,9 @@ def main(_):
     tf.config.experimental.set_memory_growth(gpu, True)
   if gpus:
     tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'GPU')
+
+  if FLAGS.amp:
+    mixed_precision.set_global_policy('mixed_float16')
 
   if FLAGS.batch_size % hvd_size != 0:
     raise ValueError(F"Batch size ({FLAGS.batch_size}) is not divisible by world size ({hvd_size})")
@@ -129,7 +134,6 @@ def main(_):
       inputs = input_gen[step % FLAGS.num_data_batches]
       (numerical_features, cat_features), labels = inputs
       loss = train_step(numerical_features, cat_features, labels)
-      loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
       if step % 50 == 0:
         loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
         if hvd_rank == 0:

@@ -274,7 +274,7 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
 
     dp_inputs, _ = self.gen_inputs(table_sizes)
     self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
-    for tables in test_model.dist_embeddings.strategy.table_ids_list:
+    for tables in test_model.dist_embeddings.strategy.table_ids:
       self.assertEqual(len(tables), len(set(tables)))
 
   def test_column_slice_threshold(self):
@@ -299,6 +299,18 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     mp_input_ids = test_model.dist_embeddings.strategy.input_ids_list[self.hvd_rank]
     dp_inputs, mp_inputs = self.gen_inputs(table_sizes, mp_input_ids=mp_input_ids)
     self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
+
+  def test_8table_width2_auto_concat(self):
+    table_sizes = [[10, 2], [11, 2], [4, 2], [4, 2], [10, 2], [11, 2], [4, 2], [4, 2]]
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes,
+                                    distribute=True,
+                                    strategy='memory_balanced',
+                                    dp_input=False)
+    mp_input_ids = test_model.dist_embeddings.strategy.input_ids_list[self.hvd_rank]
+    dp_inputs, mp_inputs = self.gen_inputs(table_sizes, mp_input_ids=mp_input_ids)
+    self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
+    self.assertEqual(len(test_model.dist_embeddings.weights), 1, "Table fusion failed.")
 
   def test_model_fit_basic(self):
     table_sizes = self.gen_table_sizes()

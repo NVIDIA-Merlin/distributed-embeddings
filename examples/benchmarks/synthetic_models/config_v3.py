@@ -123,7 +123,16 @@ model_colossal = ModelConfig(name="Colossal v3",
                              num_numerical_features=500,
                              interact_stride=30)
 
+model_criteo = ModelConfig(name="Criteo-dlrm-like",
+                           embedding_configs=[
+                               EmbeddingConfig(26, [1], 100000, 128, False),
+                           ],
+                           mlp_sizes=[512, 256, 128],
+                           num_numerical_features=13,
+                           interact_stride=None)
+
 synthetic_models_v3 = {
+    "criteo": model_criteo,
     "tiny": model_tiny,
     "small": model_small,
     "medium": model_medium,

@@ -155,7 +155,7 @@ class Embedding(tf.keras.layers.Layer):
     return super().from_config(config)
 
 
-class ConcatEmbedding(tf.keras.layers.Layer):
+class ConcatOneHotEmbedding(tf.keras.layers.Layer):
   """Concatenated one hot embedding
 
   Args:

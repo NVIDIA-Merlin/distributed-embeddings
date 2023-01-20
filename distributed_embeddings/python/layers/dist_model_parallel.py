@@ -16,10 +16,25 @@
 import math
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras import initializers
 from tensorflow.python.keras.utils import tf_utils
 import horovod.tensorflow as hvd
 from distributed_embeddings.python.ops.embedding_lookup_ops import read_var_no_copy
 from .embedding import Embedding
+
+
+class ConcatInitializer(tf.keras.initializers.Initializer):
+  """ initializer wrapper to handle automatic concat table on first dimension
+  """
+
+  def __init__(self, initializer, sizes):
+    self._initializer = initializer
+    self.sizes = sizes
+
+  def __call__(self, shape, **kwargs):
+    weights = [self._initializer([size, shape[1]], **kwargs) for size in self.sizes]
+    weights = tf.concat(weights, axis=0)
+    return weights
 
 
 class DistEmbeddingStrategy():
@@ -32,90 +47,90 @@ class DistEmbeddingStrategy():
     input_table_map (list or None): A list of table ids mapping each input to a table, i.e.,
         `input[i]` map to `table[input_table_map[i]]`. None means there are same number of
         inputs/tables and `input[i]` map to `table[i]`. Default None.
+
+  Attributes:
+    strategy: string indicates how embedding tables are distributed.
+    column_slice_threshold: desired upper bound of elements count in each slice.
+    sliced_out_ranges: list of [output_pos, num_slices] for each input, used to merged outputs.
+    input_ids_list: nested list, contain input index list in rank order. use for dp_input == False.
+    local_maps: nested list, contain per rank local input to table map.
+    local_configs: nested list, contain per rank lists of local table configs.
+    local_input_offsets: nested list, contain per rank offsets to form input for concat embedding.
+    local_weight_offsets: nested list, contain per rank weight internal offsets get/set_weights.
+    local_group_list: nested list, contain per rank concat grouping info for get/set_weights.
+    table_ids: nested list, contain per rank table ids for get/set_weights.
+    widths_list_flat: list of all output width, before merging slices and in worker order
+    rev_global_input_ids: list to shuffle output in worker order into same input order.
   """
 
   def __init__(self,
                embeddings,
                world_size,
-               rank,
                strategy="basic",
                input_table_map=None,
                column_slice_threshold=None):
+    # code in DMP to skip hvd call in single process case may assume "basic"
+    self.strategy = "basic" if world_size == 1 else strategy
+    # column_slice can be used to enable more table concat, so keep it in single process
+    self.column_slice_threshold = column_slice_threshold
     self.global_configs = [e.get_config() for e in embeddings]
-    self.strategy = strategy
     if input_table_map is None:
       input_table_map = list(range(len(embeddings)))
-    if world_size == 1:
-      self.local_configs = self.global_configs
-      self.local_input_table_map = input_table_map
-      self.input_ids_list = [list(range(len(input_table_map)))]
-      self.table_ids_list = [list(range(len(embeddings)))]
-      return
 
     # Create (maybe) sliced configs
     sliced_configs, self.sliced_out_ranges = self.create_sliced_configs(
-        world_size, column_slice_threshold, input_table_map)
-    # Apply strategy and save nested list containing table indices by rank
-    self.table_ids_list = self.apply_stragety(strategy, world_size, sliced_configs)
+        world_size, self.column_slice_threshold, input_table_map)
 
-    # Nested list containing input indices by rank
+    # Apply strategy and save nested list containing table indices by rank
+    table_ids = self.apply_stragety(self.strategy, world_size, sliced_configs)
+
+    # Following are ALL nested lists holding info for distributing embeddings, ordered by rank
     self.input_ids_list = []
-    # Nested list containing local input to local table map by rank
-    self.local_map_list = []
-    # Nested list containing local configs by rank
-    self.local_configs_list = []
-    # All of local widths ordered by rank flat into single list
-    self.widths_list_flat = []
-    # Temp list to store tables that are merged back
-    merged_ids_list = []
+    self.local_maps = []
+    self.local_configs = []
+    self.local_input_offsets = []
+    self.local_weight_offsets = []
+    self.local_group_list = []
+    self.table_ids = []
+
     # Each worker loop over all rank to get global view of strategy
-    for rank_table_ids in self.table_ids_list:
+    for rank_table_ids in table_ids:
       # first merge different shards of same table that ends up on same rank
-      merged_table_ids, rank_configs = [], []
-      for table_idx in rank_table_ids:
-        # this id has been seen on this rank before, merge it with earlier shard
-        if table_idx in merged_table_ids:
-          config_to_merge = sliced_configs[table_idx].pop(0)
-          index_to_merge = merged_table_ids.index(table_idx)
-          rank_configs[index_to_merge]['output_dim'] += config_to_merge['output_dim']
-          # modify output concat ranges
-          for out_range in self.sliced_out_ranges:
-            if out_range[0] == table_idx:
-              out_range[-1] -= 1
-        else:
-          merged_table_ids.append(table_idx)
-          rank_configs.append(sliced_configs[table_idx].pop(0))
-      merged_ids_list.append(merged_table_ids)
-      # calculate stats needed for each rank. we do following to allow inputs share embedding
-      rank_widths, rank_input_ids, rank_input_map = [], [], []
-      for m, table_idx in enumerate(merged_table_ids):
+      rank_table_ids, rank_configs = self._merge_slices(rank_table_ids, sliced_configs)
+      self.table_ids.append(rank_table_ids)
+
+      # calculate local input ids and map from this rank's table_ids and global input map
+      rank_input_ids, rank_input_map = [], []
+      for m, table_idx in enumerate(rank_table_ids):
         for k, mapped_idx in enumerate(input_table_map):
           if table_idx == mapped_idx:
-            rank_widths.append(rank_configs[m]['output_dim'])
             rank_input_ids.append(k)
             rank_input_map.append(m)
-      self.local_configs_list.append(rank_configs)
-      self.widths_list_flat += rank_widths
+
+      # concat eligible tables then adjust local config and map
+      rank_configs, rank_input_map, input_offsets, group, weight_offsets = self._create_concat(
+          rank_configs, rank_input_map)
+
+      # save results to global nested list
       self.input_ids_list.append(rank_input_ids)
-      self.local_map_list.append(rank_input_map)
+      self.local_configs.append(rank_configs)
+      self.local_maps.append(rank_input_map)
+      self.local_input_offsets.append(input_offsets)
+      self.local_group_list.append(group)
+      self.local_weight_offsets.append(weight_offsets)
 
-    # Reset global view of table ids after merging
-    self.table_ids_list = merged_ids_list
-
-    # List that maps local inputs to local table
-    self.local_input_table_map = self.local_map_list[rank]
-
-    # flatten self.input_ids_list
-    worker_order_input_ids = [item for sublist in self.input_ids_list for item in sublist]
+    # create a flatten list contain table widths, in worker order, used for slice after alltoall
+    # TODO(deyuf): might switch to not use this to support non-2D output
+    self.widths_list_flat = []
+    for config, input_map in zip(self.local_configs, self.local_maps):
+      self.widths_list_flat += [config[m]['output_dim'] for m in input_map]
 
     # List of indices to shuffle worker ordered embedding outputs back to original order
+    worker_order_input_ids = [item for sublist in self.input_ids_list for item in sublist]
     self.rev_global_input_ids = [
         index
         for _, index in sorted(zip(worker_order_input_ids, range(len(worker_order_input_ids))))
     ]
-
-    # List of configs to create local embedding layers
-    self.local_configs = self.local_configs_list[rank]
 
   def maybe_slice_table_column(self, orig_config, column_slice_threshold, world_size):
     """Column slice a embedding config if size exceed column_slice_threshold.
@@ -215,6 +230,65 @@ class DistEmbeddingStrategy():
       raise ValueError(F"Unsupported strategy {strategy}")
     return divided_ids
 
+  # First attempt here, converting into shared embedding and let TF/XLA does the job.
+  # TODO(deyuf): add shortcut for all to 1 concat. explicitly shape things to save slice/concat
+  # i.e. reshape to [num_worker, num_inp, local_batch] and offset in [1, num_inp, 1]
+  def _create_concat(self, table_configs, input_maps):
+    # first get local table id into groups
+    grouped_table_ids, concat_configs = [], []
+    for table_id, config in enumerate(table_configs):
+      for group, concat_config in zip(grouped_table_ids, concat_configs):
+        if config['output_dim'] == concat_config['output_dim'] and config.get(
+            'combiner') == concat_config.get('combiner'):
+          group.append(table_id)
+          concat_config['input_dim'] += config['input_dim']
+          concat_config['input_dims'].append(config['input_dim'])
+          concat_config['offsets'].append(concat_config['offsets'][-1] + config['input_dim'])
+          break
+      else:  # can't merge with any group, create a new one
+        grouped_table_ids.append([table_id])
+        config['input_dims'] = [config['input_dim']]
+        config['offsets'] = [0, config['input_dim']]
+        concat_configs.append(config)
+
+    # adjust input map and create according offset map
+    new_input_map, input_offsets = [], []
+    for input_map in input_maps:
+      for gid, (group, concat_config) in enumerate(zip(grouped_table_ids, concat_configs)):
+        if input_map in group:
+          new_input_map.append(gid)
+          input_offsets.append(concat_config['offsets'][group.index(input_map)])
+          break
+
+    # switch to concat initializer to keep behavior associated with shape
+    for concat_config in concat_configs:
+      input_dims = concat_config.pop('input_dims')
+      if len(input_dims) > 1:
+        orig_initializer = initializers.deserialize(concat_config['embeddings_initializer'])
+        concat_config['embeddings_initializer'] = ConcatInitializer(orig_initializer, input_dims)
+
+    # record weight offsets for get/set.
+    weight_offsets = [concat_config.pop('offsets', None) for concat_config in concat_configs]
+    return concat_configs, new_input_map, input_offsets, grouped_table_ids, weight_offsets
+
+  # Helper function to re-merge slices of same table in cases they end up on same workers
+  def _merge_slices(self, rank_table_ids, sliced_configs):
+    merged_table_ids, rank_configs = [], []
+    for table_idx in rank_table_ids:
+      # this id has been seen on this rank before, merge it with earlier shard
+      if table_idx in merged_table_ids:
+        config_to_merge = sliced_configs[table_idx].pop(0)
+        index_to_merge = merged_table_ids.index(table_idx)
+        rank_configs[index_to_merge]['output_dim'] += config_to_merge['output_dim']
+        # modify output concat ranges
+        for out_range in self.sliced_out_ranges:
+          if out_range[0] == table_idx:
+            out_range[-1] -= 1
+      else:
+        merged_table_ids.append(table_idx)
+        rank_configs.append(sliced_configs[table_idx].pop(0))
+    return merged_table_ids, rank_configs
+
 
 class DistributedEmbedding(tf.keras.layers.Layer):
   """Distributed embedding wrapper
@@ -254,7 +328,7 @@ class DistributedEmbedding(tf.keras.layers.Layer):
       raise NotImplementedError("Row slicing embedding is not supported yet!")
 
     # Currently assume data parallel ranks == model parallel ranks
-    # TODO(Deyu): add more control over this with newly added hvd process_set api
+    # TODO(deyuf): add more control over this with newly added hvd process_set api
     if not hvd.is_initialized():
       hvd.init()
     self.world_size = hvd.size()
@@ -265,7 +339,6 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     # get model parallel distribution strategy
     self.strategy = DistEmbeddingStrategy(embeddings,
                                           self.world_size,
-                                          self.rank,
                                           strategy,
                                           input_table_map=input_table_map,
                                           column_slice_threshold=column_slice_threshold)
@@ -274,9 +347,13 @@ class DistributedEmbedding(tf.keras.layers.Layer):
 
     # create local embeddings
     self.local_embedding_layers = []
-    for config in self.strategy.local_configs:
+    for config in self.strategy.local_configs[self.rank]:
       config['synchronization'] = tf.VariableSynchronization.NONE
       self.local_embedding_layers.append(Embedding.from_config(config))
+    self.offsets = [
+        None if offset == 0 else tf.constant([offset], dtype=tf.int64)
+        for offset in self.strategy.local_input_offsets[self.rank]
+    ]
 
   def _call_base(self, inputs):  # pylint: disable=missing-param-doc,missing-type-doc
     """Call function that do embeddings and communication
@@ -285,51 +362,61 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     """
     # get model parallel input from data parallel
     if self.dp_input:
-      comm_dtype = tf.int32
-      for inp in inputs:
-        if inp.dtype == tf.int64:
-          comm_dtype = tf.int64
-      inputs = [tf.cast(inp, comm_dtype) for inp in inputs]
-      local_shapes, local_splits, global_splits, flat_inputs = [], [], [], []
-      for rank_input_ids in self.strategy.input_ids_list:
-        rank_inputs = [inputs[index] for index in rank_input_ids]
-        local_shapes.append([inp.shape for inp in rank_inputs])
-        rank_inputs = [tf.reshape(inp, [-1]) for inp in rank_inputs]
-        local_splits.append([inp.shape[0] for inp in rank_inputs])
-        global_splits.append(sum(local_splits[-1]))
-        flat_inputs += rank_inputs
-      inputs = tf.concat(flat_inputs, 0)
-      inputs, _ = hvd.alltoall(inputs, splits=global_splits, name='inp_dp_to_mp')
-      inputs = tf.reshape(inputs, [self.world_size, -1])
-      inputs = tf.split(inputs, local_splits[self.rank], 1)
-      inputs = [
-          tf.reshape(inp, [self.world_size * shape[0]] + shape[1:])
-          for inp, shape in zip(inputs, local_shapes[self.rank])
-      ]
+      if self.world_size > 1:
+        comm_dtype = tf.int32
+        for inp in inputs:
+          if inp.dtype == tf.int64:
+            comm_dtype = tf.int64
+        inputs = [tf.cast(inp, comm_dtype) for inp in inputs]
+        local_shapes, local_splits, global_splits, flat_inputs = [], [], [], []
+        for rank_input_ids in self.strategy.input_ids_list:
+          rank_inputs = [inputs[index] for index in rank_input_ids]
+          local_shapes.append([inp.shape for inp in rank_inputs])
+          rank_inputs = [tf.reshape(inp, [-1]) for inp in rank_inputs]
+          local_splits.append([inp.shape[0] for inp in rank_inputs])
+          global_splits.append(sum(local_splits[-1]))
+          flat_inputs += rank_inputs
+        inputs = tf.concat(flat_inputs, 0)
+        inputs, _ = hvd.alltoall(inputs, splits=global_splits, name='inp_dp_to_mp')
+        inputs = tf.reshape(inputs, [self.world_size, -1])
+        inputs = tf.split(inputs, local_splits[self.rank], 1)
+        inputs = [
+            tf.reshape(inp, [self.world_size * shape[0]] + shape[1:])
+            for inp, shape in zip(inputs, local_shapes[self.rank])
+        ]
+      else:
+        # expected input order may still change in case of single process
+        inputs = [inputs[idx] for idx in self.strategy.input_ids_list[0]]
 
-    if len(inputs) != len(self.strategy.local_input_table_map):
-      raise ValueError(F"Expect {self.strategy.local_input_table_map} inputs, got {len(inputs)}.")
+    if len(inputs) != len(self.strategy.local_maps[self.rank]):
+      raise ValueError(F"Expect {self.strategy.local_maps[self.rank]} inputs, got {len(inputs)}.")
+
+    # offset inputs
+    inputs = [
+        inp if offset is None else inp + tf.cast(offset, inp.dtype)
+        for inp, offset in zip(inputs, self.offsets)
+    ]
     # do embedding
     mp_outs = [
         self.local_embedding_layers[m](inp)
-        for m, inp in zip(self.strategy.local_input_table_map, inputs)
+        for m, inp in zip(self.strategy.local_maps[self.rank], inputs)
     ]
+    mp_outs = [tf.cast(output, self.compute_dtype) for output in mp_outs]
 
-    # TODO(Deyu): current assume 2D with same batch for all output, ideally should support general case
-    mp_outs = [tf.reshape(mp_out, [self.world_size, -1]) for mp_out in mp_outs]
-    mp_outs = tf.reshape(tf.concat(mp_outs, axis=1), [-1])
-    # cast before alltoall according to dtype policy
-    mp_outs = tf.cast(mp_outs, self.compute_dtype)
-    dp_outs = hvd.alltoall(mp_outs, name='out_mp_to_dp')
-    batch_size = tf.shape(
-        inputs[0], out_type=tf.int32)[0] if inputs[0].shape[0] is None else inputs[0].shape[0]
-    local_bs = batch_size // self.world_size
-    num_elements = [local_bs * item for item in self.strategy.widths_list_flat]
-    split_outs = tf.split(dp_outs, num_elements)
-    worker_order_res = [tf.reshape(split_out, [local_bs, -1]) for split_out in split_outs]
+    if self.world_size > 1:
+      # TODO(deyuf): current assume 2D with same batch for all output, ideally should support general case
+      mp_outs = [tf.reshape(mp_out, [self.world_size, -1]) for mp_out in mp_outs]
+      mp_outs = tf.reshape(tf.concat(mp_outs, axis=1), [-1])
+      dp_outs = hvd.alltoall(mp_outs, name='out_mp_to_dp')
+      batch_size = tf.shape(
+          inputs[0], out_type=tf.int32)[0] if inputs[0].shape[0] is None else inputs[0].shape[0]
+      local_bs = batch_size // self.world_size
+      num_elements = [local_bs * item for item in self.strategy.widths_list_flat]
+      split_outs = tf.split(dp_outs, num_elements)
+      mp_outs = [tf.reshape(split_out, [local_bs, -1]) for split_out in split_outs]
 
     # reorder outputs to be same as inputs order
-    result = [worker_order_res[index] for index in self.strategy.rev_global_input_ids]
+    result = [mp_outs[index] for index in self.strategy.rev_global_input_ids]
     return result
 
   def _concat_column_slice_outputs(self, outs):
@@ -355,24 +442,20 @@ class DistributedEmbedding(tf.keras.layers.Layer):
         hvd.broadcast_object(0)
 
     if self.world_size > 1:
-      slice_info = [[rank_tids.count(tid)
-                     for rank_tids in self.strategy.table_ids_list]
-                    for tid in range(len(weights))]
-      weights = [weights[index] for index in self.strategy.table_ids_list[self.rank]]
+      slice_info = [[rank_table_id.count(table_id)
+                     for rank_table_id in self.strategy.table_ids]
+                    for table_id in range(len(weights))]
+      weights = [weights[index] for index in self.strategy.table_ids[self.rank]]
       if isinstance(weights[0], str):
         weights = [np.load(file=path, mmap_mode='r') for path in weights]
-      local_info = [slice_info[index] for index in self.strategy.table_ids_list[self.rank]]
-      # array to handle multiple slice into same table case
-      # TODO(Deyu): avoid this by merge those table again after find strategy
-      rank_ids = self.strategy.table_ids_list[self.rank]
-      index_offset = [rank_ids[:i].count(rank_id) for i, rank_id in enumerate(rank_ids)]
+      local_info = [slice_info[index] for index in self.strategy.table_ids[self.rank]]
 
-      def _slice_weight_for_rank(weight, info, global_rank, offset):
+      def _slice_weight_for_rank(weight, info, global_rank):
         num_columns = weight.shape[1]
         num_slices = sum(info)
         column_per_slice = num_columns // num_slices
         remainder = num_columns % num_slices
-        rank = sum(info[:global_rank]) + offset
+        rank = sum(info[:global_rank])
 
         start = column_per_slice * rank + min(rank, remainder)
         rank += 1
@@ -380,12 +463,18 @@ class DistributedEmbedding(tf.keras.layers.Layer):
         return weight[:, start:end]
 
       weights = [
-          _slice_weight_for_rank(weight, info, self.rank, offset)
-          for weight, info, offset in zip(weights, local_info, index_offset)
+          _slice_weight_for_rank(weight, info, self.rank)
+          for weight, info in zip(weights, local_info)
       ]
     else:
       if isinstance(weights[0], str):
         weights = [np.load(file=path, mmap_mode='r') for path in weights]
+    # now we have weight distributed, need to concat
+    concat_weights = []
+    for group in self.strategy.local_group_list[self.rank]:
+      to_concat = [weights[idx] for idx in group]
+      concat_weights.append(np.concatenate(to_concat))
+    weights = concat_weights
     # variable.assign and copy-on-write creates extra copy of weight that causes OOM
     # so here we scatter update by ~128M elements chunks instead of just do
     # super().set_weights(weights)
@@ -451,15 +540,22 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     """
     # avoid copy-on-read on dense access
     local_weights = [read_var_no_copy(w) for w in self.weights]
+    # TODO(deyuf): undo concat locally first. this require we save original local config
     if self.world_size == 1:
-      return [w.numpy() for w in local_weights]
+      concat_weights = [w.numpy() for w in local_weights]
+      res = [item for sublist in self.strategy.local_group_list[0] for item in sublist]
+      for offsets, f_w, group in zip(self.strategy.local_weight_offsets[0], concat_weights,
+                                     self.strategy.local_group_list[0]):
+        for i in range(len(offsets) - 1):
+          res[group[i]] = f_w[offsets[i]:offsets[i + 1]]
+      return res
 
     # mpi segfault on over 32bit range index, so we gather weights chunk by chunk here
     # choose a number not very close to int32 limit as maximum chunk size just to be safe
     chunking_threshold = 2000000000
     num_chunks = 1
-    for local_configs in self.strategy.local_configs_list:
-      total_elements = sum([c['input_dim'] * c['output_dim'] for c in local_configs])
+    for local_config in self.strategy.local_configs:
+      total_elements = sum([c['input_dim'] * c['output_dim'] for c in local_config])
       num_chunks = max(num_chunks, math.ceil(self.world_size * total_elements / chunking_threshold))
 
     with tf.device('CPU:0'):
@@ -488,16 +584,25 @@ class DistributedEmbedding(tf.keras.layers.Layer):
 
       # split flat local weights into correct sizes
       weights = []
-      for local_weight, local_configs in zip(local_weights, self.strategy.local_configs_list):
-        local_shapes = [[c['input_dim'], c['output_dim']] for c in local_configs]
+      for local_weight, local_config, weight_offsets, local_groups in zip(
+          local_weights, self.strategy.local_configs, self.strategy.local_weight_offsets,
+          self.strategy.local_group_list):
+        local_shapes = [[c['input_dim'], c['output_dim']] for c in local_config]
         local_sizes = [shape[0] * shape[1] for shape in local_shapes]
         flat_weights = self._split_1d(local_weight, local_sizes)
-        weights += [tf.reshape(weight, shape) for weight, shape in zip(flat_weights, local_shapes)]
+        concat_weights = [
+            tf.reshape(weight, shape) for weight, shape in zip(flat_weights, local_shapes)
+        ]
+        # split concat embedding weights
+        res = [item for sublist in local_groups for item in sublist]
+        for offsets, f_w, group in zip(weight_offsets, concat_weights, local_groups):
+          for i in range(len(offsets) - 1):
+            res[group[i]] = f_w[offsets[i]:offsets[i + 1]]
+        weights += res
+
       # restore original table order
-      # flatten self.strategy.table_ids_list
-      worker_order_table_ids = [
-          item for sublist in self.strategy.table_ids_list for item in sublist
-      ]
+      # flatten self.strategy.table_ids
+      worker_order_table_ids = [item for sublist in self.strategy.table_ids for item in sublist]
       # Shuffle worker ordered embedding weights(sliced) back to original order.
       ids_and_weights = sorted(zip(worker_order_table_ids, weights), key=lambda x: x[0])
       # concat sliced weights
@@ -522,14 +627,6 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     self.built = True
 
   def call(self, inputs):  # pylint: disable=missing-function-docstring
-    if self.world_size == 1:
-      outputs = [
-          self.local_embedding_layers[m](inp)
-          for m, inp in zip(self.strategy.local_input_table_map, inputs)
-      ]
-      outputs = [tf.cast(output, self.compute_dtype) for output in outputs]
-      return outputs
-
     # TODO(skyw): Revisit logics of selecting call functions for different strategy
     outputs = self._call_base(inputs)
     outputs = self._concat_column_slice_outputs(outputs)
@@ -580,7 +677,7 @@ def DistributedGradientTape(*args, **kwargs):  # pylint: disable=missing-param-d
         dp_vars.append(var)
         dp_grads.append(grad)
         split_infos.append((False, len(dp_grads) - 1))
-    # TODO(Deyu): make sure not reusing _allreduce_grads doesn't lead to any issue
+    # TODO(deyuf): make sure not reusing _allreduce_grads doesn't lead to any issue
     dp_grads = [
         hvd.allreduce(g, name=f'dp_gradient_{i}', op=hvd.Average) for i, g in enumerate(dp_grads)
     ]
