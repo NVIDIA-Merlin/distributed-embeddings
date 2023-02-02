@@ -622,8 +622,20 @@ class DistributedEmbedding(tf.keras.layers.Layer):
 
   @tf_utils.shape_type_conversion
   def build(self, input_shape):
+    if input_shape is not None:
+      # Do some checks to detect cases that are not supported
+      if not isinstance(input_shape, list):
+        input_shape = [input_shape]
+      batch_sizes = [shape[0] for shape in input_shape]
+      batch_sizes = hvd.allgather(batch_sizes).numpy().tolist()
+      if len(set(batch_sizes)) > 1:
+        raise ValueError(F"All input need to have same batchsize. got {set(batch_sizes)}.")
+      if not self.dp_input:
+        if batch_sizes[0] % self.world_size > 0:
+          raise ValueError(
+              F"Global batchsize {batch_sizes[0]} not divisible workers count {self.world_size}.")
     for layer in self.local_embedding_layers:
-      layer.build(input_shape)
+      layer.build(input_shape[0] if input_shape else None)
     self.built = True
 
   def call(self, inputs):  # pylint: disable=missing-function-docstring

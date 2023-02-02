@@ -129,7 +129,7 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     dp_inputs = [
         t[self.hvd_rank * local_batch:(self.hvd_rank + 1) * local_batch] for t in global_inputs
     ]
-    mp_inputs = [global_inputs[i] for i in mp_input_ids] if mp_input_ids else None
+    mp_inputs = [global_inputs[i] for i in mp_input_ids] if mp_input_ids else []
 
     return dp_inputs, mp_inputs
 
@@ -361,6 +361,21 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     with self.assertRaises(ValueError):
       test_model.dist_embeddings.set_weights(ref_weights[:num_tables])
       test_model.dense.set_weights(ref_weights[num_tables:])
+
+  def test_indivisible_batch(self):
+    table_sizes = self.gen_table_sizes()
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='basic', dp_input=False)
+
+    # First generate model parallel batches that's divisible by world_size. We then use (batch_size - 1)
+    # which will be indivisible by world_size greater than 1 due to consecutive numbers coprimes
+    mp_input_ids = test_model.dist_embeddings.strategy.input_ids_list[self.hvd_rank]
+    dp_inputs, mp_inputs = self.gen_inputs(table_sizes, mp_input_ids=mp_input_ids)
+    mp_inputs = [inp[1:] for inp in mp_inputs]
+    if self.hvd_size > 1:
+      with self.assertRaisesRegex(ValueError, "not divisible"):
+        self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
 
 
 if __name__ == "__main__":
