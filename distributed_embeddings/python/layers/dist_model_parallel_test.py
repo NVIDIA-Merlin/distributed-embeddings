@@ -96,11 +96,11 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
   def gen_table_sizes(self, num_tables=None):
     random.seed(self.seed)
     if num_tables is None:
-      num_tables = random.randint(self.hvd_size, 2 * self.hvd_size)
+      num_tables = random.randint(1, 2 * self.hvd_size)
     table_sizes = []
     for _ in range(num_tables):
       table_height = random.randint(3, 20)
-      table_width = random.randint(3, 15)
+      table_width = random.randint(4, 15)
       table_sizes.append([table_height, table_width])
     return table_sizes
 
@@ -278,7 +278,7 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
       self.assertEqual(len(tables), len(set(tables)))
 
   def test_column_slice_threshold(self):
-    table_sizes = self.gen_table_sizes()
+    table_sizes = self.gen_table_sizes(self.hvd_size + 1)
     ref_model = EmbeddingListModel(table_sizes, distribute=False)
     test_model = EmbeddingListModel(table_sizes,
                                     distribute=True,
@@ -376,6 +376,15 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     if self.hvd_size > 1:
       with self.assertRaisesRegex(ValueError, "not divisible"):
         self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
+
+  def test_fewer_tables_than_workers(self):
+    table_sizes = self.gen_table_sizes(1)
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='memory_balanced')
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+    self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
 
 
 if __name__ == "__main__":

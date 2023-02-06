@@ -178,6 +178,16 @@ class DistEmbeddingStrategy():
       sliced_out_ranges (list): each element is list of 2 integers, representing output ranges need
     to be concatenated to re-form output due to above slice.
     """
+    # TODO(Deyu): in auto slice and when there are equal sized tables, allow slice some of them
+    # less table than worker, we try our best to slice into worker count slices(may go over)
+    if column_slice_threshold is None:
+      table_sizes = [config['input_dim'] * config['output_dim'] for config in self.global_configs]
+      while world_size > len(table_sizes):
+        table_sizes.sort()
+        column_slice_threshold = table_sizes[-1] - 1
+        cur_max_size = table_sizes.pop(-1)
+        table_sizes += [cur_max_size // 2, cur_max_size // 2]
+
     sliced_configs = []
     for global_config in self.global_configs:
       maybe_sliced_config = self.maybe_slice_table_column(global_config, column_slice_threshold,
@@ -300,8 +310,11 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     embeddings (list of keras Embedding layers): embedding tables to be distributed
     strategy (str): A string indicates how embedding tables are distributed.
         Choices are [“basic”, “memory_balanced”]. Default "basic"
-    column_slice_threshold (int or None): If not None, embedding tables with more elements than
-        column_slice_threshold will be divide into N even pieces alone embedded width dimension.
+    column_slice_threshold (int or None): If None, column slice only happen when there are more
+        workers than tables. In that case, column_slice_threshold will be choose automatically
+        so each worker receive at least one slice.
+        If not None, embedding tables with more elements than column_slice_threshold will be divide
+        into N even pieces alone embedded width dimension.
         N is smallest power of 2 makes each slice smaller than column_slice_threshold. Default None.
     row_slice (TBD): Describe how which embedding needs to be row sliced
     dp_input (bool): If True, takes data parallel input, i.e. in shape
@@ -342,8 +355,10 @@ class DistributedEmbedding(tf.keras.layers.Layer):
                                           strategy,
                                           input_table_map=input_table_map,
                                           column_slice_threshold=column_slice_threshold)
-    if len(self.strategy.global_configs) < self.world_size:
-      raise NotImplementedError
+    # Handle explicit threshold or corner cases, in which worker may receive no configs
+    if not all(rank_configs for rank_configs in self.strategy.local_configs):
+      raise ValueError("Not enough table after slicing to run on all worker."
+                       "Try decrease column_slice_threshold or decrease worker count")
 
     # create local embeddings
     self.local_embedding_layers = []
