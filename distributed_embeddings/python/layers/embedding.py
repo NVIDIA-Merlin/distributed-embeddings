@@ -67,7 +67,6 @@ class Embedding(tf.keras.layers.Layer):
                activity_regularizer=None,
                embeddings_constraint=None,
                combiner=None,
-               synchronization=tf.VariableSynchronization.AUTO,
                **kwargs):
     if 'input_shape' not in kwargs:
       kwargs['input_shape'] = (None,)
@@ -89,7 +88,6 @@ class Embedding(tf.keras.layers.Layer):
     self.activity_regularizer = regularizers.get(activity_regularizer)
     self.embeddings_constraint = constraints.get(embeddings_constraint)
     self.combiner = combiner
-    self.synchronization = synchronization
 
   @tf_utils.shape_type_conversion
   def build(self, input_shape):  # pylint: disable=unused-argument
@@ -98,7 +96,6 @@ class Embedding(tf.keras.layers.Layer):
                                       name='embeddings',
                                       regularizer=self.embeddings_regularizer,
                                       constraint=self.embeddings_constraint,
-                                      synchronization=self.synchronization,
                                       experimental_autocast=False)
     self.built = True
 

@@ -21,9 +21,28 @@ from tensorflow.python.keras import keras_parameterized
 import horovod.tensorflow as hvd
 from distributed_embeddings.python.layers import dist_model_parallel as dmp
 
+
 # There are some functions in TF that pylint can't inspect correctly which leads to incorrect
 # report of unexpected-keyword-arg, no-value-for-parameter. Disable them globally here
 # pylint: disable=no-self-use,unexpected-keyword-arg,no-value-for-parameter,missing-docstring
+class CustomEmbedding(tf.keras.layers.Layer):
+
+  def __init__(self, input_dim, output_dim, **kwargs):
+    super().__init__(**kwargs)
+    self.input_dim = input_dim
+    self.output_dim = output_dim
+
+  def build(self, _):
+    self.params = self.add_weight("params",
+                                  shape=[self.input_dim, self.output_dim],
+                                  dtype=tf.float32)
+
+  def call(self, inputs):
+    return tf.gather(params=self.params, indices=inputs, axis=None)
+
+  def get_config(self):
+    config = {'input_dim': self.input_dim, 'output_dim': self.output_dim}
+    return config
 
 
 class EmbeddingListModel(tf.keras.Model):
@@ -35,11 +54,15 @@ class EmbeddingListModel(tf.keras.Model):
                strategy='basic',
                dp_input=True,
                input_table_map=None,
-               column_slice_threshold=None):
+               column_slice_threshold=None,
+               test_custom_layer=False):
     super().__init__()
     self.embeddings = []
     for size in table_sizes:
-      self.embeddings.append(tf.keras.layers.Embedding(*size))
+      if test_custom_layer:
+        self.embeddings.append(CustomEmbedding(*size))
+      else:
+        self.embeddings.append(tf.keras.layers.Embedding(*size))
     if distribute:
       self.dist_embeddings = dmp.DistributedEmbedding(self.embeddings,
                                                       strategy=strategy,
@@ -382,6 +405,18 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
 
     ref_model = EmbeddingListModel(table_sizes, distribute=False)
     test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='memory_balanced')
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+    self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
+
+  def test_custom_embedding_layer(self):
+    table_sizes = self.gen_table_sizes()
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False, test_custom_layer=True)
+    test_model = EmbeddingListModel(table_sizes,
+                                    distribute=True,
+                                    strategy='basic',
+                                    test_custom_layer=True)
 
     dp_inputs, _ = self.gen_inputs(table_sizes)
     self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)

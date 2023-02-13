@@ -74,6 +74,9 @@ class DistEmbeddingStrategy():
     # column_slice can be used to enable more table concat, so keep it in single process
     self.column_slice_threshold = column_slice_threshold
     self.global_configs = [e.get_config() for e in embeddings]
+    # Insert layer type information to config dicts
+    for config, embedding in zip(self.global_configs, embeddings):
+      config['layer_type'] = type(embedding)
     if input_table_map is None:
       input_table_map = list(range(len(embeddings)))
 
@@ -274,8 +277,10 @@ class DistEmbeddingStrategy():
     for concat_config in concat_configs:
       input_dims = concat_config.pop('input_dims')
       if len(input_dims) > 1:
-        orig_initializer = initializers.deserialize(concat_config['embeddings_initializer'])
-        concat_config['embeddings_initializer'] = ConcatInitializer(orig_initializer, input_dims)
+        # TODO(deyuf): custom layer without initializer will be concat but init is not wrapped
+        if 'embeddings_initializer' in concat_config:
+          orig_initializer = initializers.deserialize(concat_config['embeddings_initializer'])
+          concat_config['embeddings_initializer'] = ConcatInitializer(orig_initializer, input_dims)
 
     # record weight offsets for get/set.
     weight_offsets = [concat_config.pop('offsets', None) for concat_config in concat_configs]
@@ -363,8 +368,12 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     # create local embeddings
     self.local_embedding_layers = []
     for config in self.strategy.local_configs[self.rank]:
-      config['synchronization'] = tf.VariableSynchronization.NONE
-      self.local_embedding_layers.append(Embedding.from_config(config))
+      layer_type = config.pop('layer_type')
+      # For stock keras Embedding, we switch underlying layer for better performance
+      # If inputs are custom layers, original layer will be used
+      # TODO(deyuf): Check functionality coverage, add fallback or type picking api
+      layer_type = Embedding if layer_type == tf.keras.layers.Embedding else layer_type
+      self.local_embedding_layers.append(layer_type.from_config(config))
     self.offsets = [
         None if offset == 0 else tf.constant([offset], dtype=tf.int64)
         for offset in self.strategy.local_input_offsets[self.rank]
@@ -651,6 +660,11 @@ class DistributedEmbedding(tf.keras.layers.Layer):
               F"Global batchsize {batch_sizes[0]} not divisible workers count {self.world_size}.")
     for layer in self.local_embedding_layers:
       layer.build(input_shape[0] if input_shape else None)
+      for var in layer.trainable_weights:
+        # Mark local(model parallel) variable. use prefix de(distributed embeddings) to avoid conflicts.
+        var.de_local = True
+      # set built flag to prevent above build trigger again and above flag fall off
+      layer.built = True
     self.built = True
 
   def call(self, inputs):  # pylint: disable=missing-function-docstring
@@ -671,7 +685,7 @@ def broadcast_variables(model_vars, root_rank=0):  # pylint: disable=missing-any
   dp_vars = []
   mp_vars = []
   for var in model_vars:
-    if var.synchronization == tf.VariableSynchronization.NONE:
+    if hasattr(var, 'de_local'):
       mp_vars.append(var)
     else:
       dp_vars.append(var)
@@ -693,7 +707,7 @@ def DistributedGradientTape(*args, **kwargs):  # pylint: disable=missing-param-d
     mp_grads = []
     split_infos = []
     for grad, var in zip(gradients, sources):
-      if var.synchronization == tf.VariableSynchronization.NONE:
+      if hasattr(var, 'de_local'):
         if isinstance(grad, tf.IndexedSlices):
           mp_grads.append(tf.IndexedSlices(grad.values / hvd.size(), grad.indices,
                                            grad.dense_shape))
