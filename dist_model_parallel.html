@@ -207,8 +207,11 @@ forward and backward of embedding.</p>
 <li><p><strong>embeddings</strong> (<em>list of keras Embedding layers</em>) – embedding tables to be distributed</p></li>
 <li><p><strong>strategy</strong> (<em>str</em>) – A string indicates how embedding tables are distributed.
 Choices are [“basic”, “memory_balanced”]. Default “basic”</p></li>
-<li><p><strong>column_slice_threshold</strong> (<em>int or None</em>) – If not None, embedding tables with more elements than
-column_slice_threshold will be divide into N even pieces alone embedded width dimension.
+<li><p><strong>column_slice_threshold</strong> (<em>int or None</em>) – If None, column slice only happen when there are more
+workers than tables. In that case, column_slice_threshold will be choose automatically
+so each worker receive at least one slice.
+If not None, embedding tables with more elements than column_slice_threshold will be divide
+into N even pieces alone embedded width dimension.
 N is smallest power of 2 makes each slice smaller than column_slice_threshold. Default None.</p></li>
 <li><p><strong>row_slice</strong> (<em>TBD</em>) – Describe how which embedding needs to be row sliced</p></li>
 <li><p><strong>dp_input</strong> (<em>bool</em>) – If True, takes data parallel input, i.e. in shape

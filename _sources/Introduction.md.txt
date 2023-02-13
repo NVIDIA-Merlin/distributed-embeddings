@@ -5,6 +5,8 @@
 
 distributed-embeddings is a library for building large embedding based (e.g. recommender) models in Tensorflow 2. It provides a scalable model parallel wrapper that automatically distribute embedding tables to multiple GPUs, as well as efficient embedding operations that cover and extend Tensorflow's embedding functionalities.
 
+Refer to [NVIDIA Developer blog](https://developer.nvidia.com/blog/fast-terabyte-scale-recommender-training-made-easy-with-nvidia-merlin-distributed-embeddings/) about Terabyte-scale Recommender Training for more details.
+
 ## Features
 
 ### Distributed model parallel wrapper
@@ -22,7 +24,7 @@ Python 3, CUDA 11 or newer, TensorFlow 2
 ### Containers ###
 You can build inside 22.03 or later NGC TF2 [image](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow):
 ```bash
-docker pull nvcr.io/nvidia/tensorflow:22.10-tf2-py3
+docker pull nvcr.io/nvidia/tensorflow:23.01-tf2-py3
 ```
 ### Build from source
 

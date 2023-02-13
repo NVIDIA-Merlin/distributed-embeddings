@@ -201,6 +201,7 @@
 <p><a class="reference external" href="https://nvidia-merlin.github.io/distributed-embeddings/Introduction.html"><img alt="Documentation" src="https://img.shields.io/badge/documentation-blue.svg" /></a>
 <a class="reference external" href="https://github.com/NVIDIA-Merlin/distributed-embeddingsb/blob/main/LICENSE"><img alt="LICENSE" src="https://img.shields.io/github/license/NVIDIA-Merlin/NVTabular" /></a></p>
 <p>distributed-embeddings is a library for building large embedding based (e.g. recommender) models in Tensorflow 2. It provides a scalable model parallel wrapper that automatically distribute embedding tables to multiple GPUs, as well as efficient embedding operations that cover and extend Tensorflow’s embedding functionalities.</p>
+<p>Refer to <a class="reference external" href="https://developer.nvidia.com/blog/fast-terabyte-scale-recommender-training-made-easy-with-nvidia-merlin-distributed-embeddings/">NVIDIA Developer blog</a> about Terabyte-scale Recommender Training for more details.</p>
 <section id="features">
 <h2>Features<a class="headerlink" href="#features" title="Permalink to this heading">¶</a></h2>
 <section id="distributed-model-parallel-wrapper">
@@ -222,7 +223,7 @@
 <section id="containers">
 <h3>Containers<a class="headerlink" href="#containers" title="Permalink to this heading">¶</a></h3>
 <p>You can build inside 22.03 or later NGC TF2 <a class="reference external" href="https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow">image</a>:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker pull nvcr.io/nvidia/tensorflow:22.10-tf2-py3
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker pull nvcr.io/nvidia/tensorflow:23.01-tf2-py3
 </pre></div>
 </div>
 </section>
