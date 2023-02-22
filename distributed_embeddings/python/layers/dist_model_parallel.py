@@ -395,9 +395,13 @@ class DistributedEmbedding(tf.keras.layers.Layer):
         local_shapes, local_splits, global_splits, flat_inputs = [], [], [], []
         for rank_input_ids in self.strategy.input_ids_list:
           rank_inputs = [inputs[index] for index in rank_input_ids]
-          local_shapes.append([tf.shape(inp) for inp in rank_inputs])
+          local_shapes.append(
+            [tf.shape(inp) if None in inp.shape else inp.shape for inp in rank_inputs]
+          )
           rank_inputs = [tf.reshape(inp, [-1]) for inp in rank_inputs]
-          local_splits.append([tf.shape(inp)[0] for inp in rank_inputs])
+          local_splits.append(
+            [tf.shape(inp)[0] if inp.shape[0] is None else inp.shape[0] for inp in rank_inputs]
+          )
           global_splits.append(sum(local_splits[-1]))
           flat_inputs += rank_inputs
         inputs = tf.concat(flat_inputs, 0)
