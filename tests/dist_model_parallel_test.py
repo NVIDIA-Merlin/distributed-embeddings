@@ -274,7 +274,7 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
 
     dp_inputs, _ = self.gen_inputs(table_sizes)
     self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
-    for tables in test_model.dist_embeddings.strategy.table_ids_list:
+    for tables in test_model.dist_embeddings.strategy.table_ids:
       self.assertEqual(len(tables), len(set(tables)))
 
   def test_column_slice_threshold(self):
