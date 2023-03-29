@@ -231,13 +231,3 @@ class SyntheticModelNative(keras.Model):  # pylint: disable=abstract-method
 
     x = self.mlp(x)
     return x
-
-  def train_step(self, data):
-    x, y = data
-    with tf.GradientTape() as tape:
-      predictions = self(x)
-      loss = tf.math.reduce_mean(self.compiled_loss(y, predictions))
-    tape = dmp.DistributedGradientTape(tape)
-    gradients = tape.gradient(loss, self.trainable_variables)
-    self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-    return {"loss": loss}

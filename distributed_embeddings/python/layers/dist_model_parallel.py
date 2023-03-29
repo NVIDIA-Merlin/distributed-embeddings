@@ -13,12 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Distributed Embedding layers and utils"""
+import types
 import math
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import initializers
 from tensorflow.python.keras.utils import tf_utils
+import horovod
 import horovod.tensorflow as hvd
+import horovod.tensorflow.keras as hvd_keras
 from distributed_embeddings.python.ops.embedding_lookup_ops import read_var_no_copy
 from .embedding import Embedding
 
@@ -35,6 +38,22 @@ class ConcatInitializer(tf.keras.initializers.Initializer):
     weights = [self._initializer([size, shape[1]], **kwargs) for size in self.sizes]
     weights = tf.concat(weights, axis=0)
     return weights
+
+
+def _get_shape(tensor):
+  """Return shape of tensor
+
+  Static shape is not always available, in which case we use tf.shape to get dynamic shape
+
+  Args:
+      tensor (Tensor): Input tensor
+
+  Returns:
+      tf.Shape
+  """
+  if tensor.shape is not None and None not in tensor.shape:
+    return tensor.shape
+  return tf.shape(tensor)
 
 
 class DistEmbeddingStrategy():
@@ -395,13 +414,9 @@ class DistributedEmbedding(tf.keras.layers.Layer):
         local_shapes, local_splits, global_splits, flat_inputs = [], [], [], []
         for rank_input_ids in self.strategy.input_ids_list:
           rank_inputs = [inputs[index] for index in rank_input_ids]
-          local_shapes.append(
-            [tf.shape(inp) if None in inp.shape else inp.shape for inp in rank_inputs]
-          )
+          local_shapes.append([_get_shape(inp) for inp in rank_inputs])
           rank_inputs = [tf.reshape(inp, [-1]) for inp in rank_inputs]
-          local_splits.append(
-            [tf.shape(inp)[0] if inp.shape[0] is None else inp.shape[0] for inp in rank_inputs]
-          )
+          local_splits.append([_get_shape(inp)[0] for inp in rank_inputs])
           global_splits.append(sum(local_splits[-1]))
           flat_inputs += rank_inputs
         inputs = tf.concat(flat_inputs, 0)
@@ -439,7 +454,7 @@ class DistributedEmbedding(tf.keras.layers.Layer):
       batch_size = tf.shape(
           inputs[0], out_type=tf.int32)[0] if inputs[0].shape[0] is None else inputs[0].shape[0]
       local_bs = batch_size // self.world_size
-      num_elements = [local_bs * item for item in self.strategy.widths_list_flat]
+      num_elements = [local_bs * width for width in self.strategy.widths_list_flat]
       split_outs = tf.split(dp_outs, num_elements)
       mp_outs = [tf.reshape(split_out, [local_bs, -1]) for split_out in split_outs]
 
@@ -652,7 +667,7 @@ class DistributedEmbedding(tf.keras.layers.Layer):
   def build(self, input_shape):
     if input_shape is not None:
       # Do some checks to detect cases that are not supported
-      if not isinstance(input_shape, list):
+      if not isinstance(input_shape, (list, tuple)):
         input_shape = [input_shape]
       batch_sizes = [shape[0] for shape in input_shape]
       batch_sizes = hvd.allgather(batch_sizes).numpy().tolist()
@@ -679,7 +694,8 @@ class DistributedEmbedding(tf.keras.layers.Layer):
 
 
 # Monkey patch horovod bcast/tape so we can handle mp/dp vars differently in single backward
-def broadcast_variables(model_vars, root_rank=0):  # pylint: disable=missing-any-param-doc
+# pylint: disable=protected-access, missing-any-param-doc, invalid-name
+def broadcast_variables(model_vars, root_rank=0):
   """Broadcasts variables from root rank to all other processes in a process set
 
   Replace horovod's broadcast_variables when running hybrid parallel
@@ -696,7 +712,7 @@ def broadcast_variables(model_vars, root_rank=0):  # pylint: disable=missing-any
   hvd.broadcast_variables(dp_vars, root_rank=root_rank)
 
 
-def DistributedGradientTape(*args, **kwargs):  # pylint: disable=missing-param-doc,invalid-name
+def DistributedGradientTape(*args, **kwargs):
   """Graident tape that supports hybrid parallel
 
   Replace horovod's DistributedGradientTape when running hybrid parallel
@@ -704,37 +720,83 @@ def DistributedGradientTape(*args, **kwargs):  # pylint: disable=missing-param-d
   See https://horovod.readthedocs.io/en/stable/api.html for more details
   """
 
-  def gradient(self, target, sources, output_gradients=None):
-    gradients = super(self.__class__, self).gradient(target, sources, output_gradients)
-    dp_vars = []
-    dp_grads = []
-    mp_grads = []
-    split_infos = []
-    for grad, var in zip(gradients, sources):
-      if hasattr(var, 'de_local'):
-        if isinstance(grad, tf.IndexedSlices):
-          mp_grads.append(tf.IndexedSlices(grad.values / hvd.size(), grad.indices,
-                                           grad.dense_shape))
-        else:
-          mp_grads.append(grad / hvd.size())
-        split_infos.append((True, len(mp_grads) - 1))
-      else:
-        dp_vars.append(var)
-        dp_grads.append(grad)
-        split_infos.append((False, len(dp_grads) - 1))
-    # TODO(deyuf): make sure not reusing _allreduce_grads doesn't lead to any issue
-    dp_grads = [
-        hvd.allreduce(g, name=f'dp_gradient_{i}', op=hvd.Average) for i, g in enumerate(dp_grads)
-    ]
-    # put gradients back in original order
-    grads = []
-    for info in split_infos:
-      if info[0]:
-        grads.append(mp_grads[info[1]])
-      else:
-        grads.append(dp_grads[info[1]])
-    return grads
+  def _gradient(self, target, sources, *args, **kwargs):
+    # Overwrite use_generic_names to always be True
+    kwargs["use_generic_names"] = True
 
+    gradients = self.raw_gradient(target, sources, *args, **kwargs)
+    return gradients
+
+  if horovod.__version__ < '0.27.0':
+    raise NotImplementedError(
+        "DistributedGradientTape is only compatible with horovod 0.27 or newer.")
   tape = hvd.DistributedGradientTape(*args, **kwargs)
-  setattr(type(tape), 'gradient', gradient)
+  for var in tape.watched_variables():
+    if hasattr(var, 'de_local'):
+      tape.register_local_source(var)
+
+  tape.raw_gradient = tape.gradient
+  tape.gradient = types.MethodType(_gradient, tape)
   return tape
+
+
+def DistributedOptimizer(*args, **kwargs):
+  """Distributed optimizer that supports hybrid parallel
+
+  Replace horovod's DistributedOptimizer when running hybrid parallel
+
+  See https://horovod.readthedocs.io/en/stable/api.html for more details
+  """
+
+  # might be correct to patch get/aggregate gradient, but those seems already messy
+  def _register_then_allreduce(self, grads, model_vars):
+    if not self.local_var_registed:
+      for var in model_vars:
+        if hasattr(var, 'de_local'):
+          self.register_local_var(var)
+      self.local_var_registed = True
+    return self.raw_allreduce(grads, model_vars)
+
+  if horovod.__version__ < '0.27.0':
+    raise NotImplementedError("Distributed Optimizer is only compatible with horovod 0.27 or newer")
+  opt = hvd_keras.DistributedOptimizer(*args, **kwargs)
+  opt.local_var_registed = False
+  opt.raw_allreduce = opt._allreduce
+  opt._allreduce = types.MethodType(_register_then_allreduce, opt)
+
+  # need to patch internal allreduce call with use_generic_names
+  def _named_allreduce_grads(self, grads, variables):
+    return self.raw_allreduce_grads(grads, variables, use_generic_names=True)
+
+  opt.raw_allreduce_grads = opt._allreduce_grads
+  opt._allreduce_grads = types.MethodType(_named_allreduce_grads, opt)
+  return opt
+
+
+def BroadcastGlobalVariablesCallback(*args, **kwargs):
+  """Broadcast callback that supports hybrid parallel
+
+  Replace horovod's BroadcastGlobalVariablesCallback when running hybrid parallel
+
+  See https://horovod.readthedocs.io/en/stable/api.html for more details
+  """
+
+  def _on_batch_end(self, batch, logs=None):
+    if not self.local_var_registed:
+      for var in self.model.variables:
+        if hasattr(var, 'de_local'):
+          self.register_local_var(var)
+      self.local_var_registed = True
+    return self.raw_on_batch_end(batch, logs)
+
+  if horovod.__version__ < '0.27.0':
+    raise NotImplementedError(
+        "BroadcastGlobalVariablesCallback is only compatible with horovod 0.27 or newer.")
+  bcb = hvd_keras.callbacks.BroadcastGlobalVariablesCallback(*args, **kwargs)
+  bcb.local_var_registed = False
+  bcb.raw_on_batch_end = bcb.on_batch_end
+  bcb.on_batch_end = types.MethodType(_on_batch_end, bcb)
+  return bcb
+
+
+# pylint: enable=protected-access, missing-any-param-doc, invalid-name

@@ -100,59 +100,62 @@ def main(_):
   if FLAGS.optimizer == "adam":
     optimizer = tf.keras.optimizers.Adam()
 
-  bce = keras.losses.BinaryCrossentropy(reduction=keras.losses.Reduction.NONE, from_logits=True)
+  bce = keras.losses.BinaryCrossentropy(from_logits=True)
+  if FLAGS.use_model_fit:
+    optimizer = dmp.DistributedOptimizer(optimizer)
+    model.compile(optimizer=optimizer, loss=bce)
+    callbacks = [dmp.BroadcastGlobalVariablesCallback(0)]
+    epochs = FLAGS.num_steps // FLAGS.num_data_batches
+    model.fit(input_gen,
+              epochs=epochs,
+              batch_size=FLAGS.batch_size,
+              callbacks=callbacks,
+              verbose=1 if hvd_rank == 0 else 0)
+    return
 
-  # Run one step to init and broadcast weights
+  # Not using model.fit() api. benchmark custom loop below
+  # Run one step to init
   (numerical_features, cat_features), labels = input_gen[-1]
   model((numerical_features, cat_features))
   dmp.broadcast_variables(model.variables, root_rank=0)
 
-  if not FLAGS.use_model_fit:
+  @tf.function
+  def train_step(numerical_features, categorical_features, labels):
+    with tf.GradientTape() as tape:
+      predictions = model((numerical_features, categorical_features))
+      loss = bce(labels, predictions)
+    tape = dmp.DistributedGradientTape(tape)
+    gradients = tape.gradient(loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+    return loss
 
-    @tf.function
-    def train_step(numerical_features, categorical_features, labels):
-      with tf.GradientTape() as tape:
-        predictions = model((numerical_features, categorical_features))
-        loss = tf.math.reduce_mean(bce(labels, predictions))
-      tape = dmp.DistributedGradientTape(tape)
-      gradients = tape.gradient(loss, model.trainable_variables)
-      optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-      return loss
+  # Run 5 steps to compile and warm up
+  (numerical_features, cat_features), labels = input_gen[-1]
+  for _ in range(5):
+    loss = train_step(numerical_features, cat_features, labels)
+  loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
+  # printing initial loss here to force sync before we start timer
+  print(F"Initial loss: {loss:.3f}")
 
-    # Run 5 steps to compile and warm up
-    (numerical_features, cat_features), labels = input_gen[-1]
-    for _ in range(5):
-      loss = train_step(numerical_features, cat_features, labels)
-    loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
-    # printing initial loss here to force sync before we start timer
-    print(F"Initial loss: {loss:.3f}")
+  start = time()
+  # Input data consumes a lot of memory. Instead of generating num_steps batch of synthetic data,
+  # We generate smaller amount of data and loop over them
+  for step in range(FLAGS.num_steps):
+    inputs = input_gen[step % FLAGS.num_data_batches]
+    (numerical_features, cat_features), labels = inputs
+    loss = train_step(numerical_features, cat_features, labels)
+    if step % 50 == 0:
+      loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
+      if hvd_rank == 0:
+        print(F"Benchmark step [{step}/{FLAGS.num_steps}]")
 
-    start = time()
-    # Input data consumes a lot of memory. Instead of generating num_steps batch of synthetic data,
-    # We generate smaller amount of data and loop over them
-    for step in range(FLAGS.num_steps):
-      inputs = input_gen[step % FLAGS.num_data_batches]
-      (numerical_features, cat_features), labels = inputs
-      loss = train_step(numerical_features, cat_features, labels)
-      if step % 50 == 0:
-        loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
-        if hvd_rank == 0:
-          print(F"Benchmark step [{step}/{FLAGS.num_steps}]")
-
-    loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
-    if hvd_rank == 0:
-      # printing GPU tensor forces a sync. loss was allreduced, printing on one GPU is enough
-      # for computing time so we don't print noisy messages from all ranks
-      print(F"loss: {loss:.3f}")
-      stop = time()
-      print(F"Iteration time: {(stop - start) * 1000 / FLAGS.num_steps:.3f} ms")
-  else:
-    model.compile(optimizer=optimizer, loss=bce)
-
-    epochs = FLAGS.num_steps // FLAGS.num_data_batches
-    # A broadcast variable callback should be registered once Horovod supports broadcast only data
-    # parallel variables
-    model.fit(input_gen, epochs=epochs, batch_size=FLAGS.batch_size)
+  loss = hvd.allreduce(loss, name="mean_loss", op=hvd.Average)
+  if hvd_rank == 0:
+    # printing GPU tensor forces a sync. loss was allreduced, printing on one GPU is enough
+    # for computing time so we don't print noisy messages from all ranks
+    print(F"loss: {loss:.3f}")
+    stop = time()
+    print(F"Iteration time: {(stop - start) * 1000 / FLAGS.num_steps:.3f} ms")
 
 
 if __name__ == '__main__':
