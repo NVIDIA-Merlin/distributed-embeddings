@@ -23,8 +23,10 @@ See more details at [User Guide](https://nvidia-merlin.github.io/distributed-emb
 Python 3, CUDA 11 or newer, TensorFlow 2
 ### Containers ###
 You can build inside 22.03 or later NGC TF2 [image](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow):
+
+Note: horovod v0.27 and TensorFlow 2.10, alternatively NGC 23.03 container, is required for building v0.3+
 ```bash
-docker pull nvcr.io/nvidia/tensorflow:23.01-tf2-py3
+docker pull nvcr.io/nvidia/tensorflow:23.03-tf2-py3
 ```
 ### Build from source
 
