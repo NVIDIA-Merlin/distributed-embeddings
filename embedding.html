@@ -258,13 +258,15 @@ happened before. This requires that the layer will later be used with
 inputs that match the input shape provided here.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>input_shape</strong> – Shape tuple (tuple of integers)
-or list of shape tuples (one per output tensor of the layer).
+<dd class="field-odd"><p><strong>input_shape</strong> – Shape tuple (tuple of integers) or <cite>tf.TensorShape</cite>,
+or structure of shape tuples / <cite>tf.TensorShape</cite> instances
+(one per output tensor of the layer).
 Shape tuples can include None for free dimensions,
 instead of an integer.</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>An input shape tuple.</p>
+<dd class="field-even"><p>A <cite>tf.TensorShape</cite> instance
+or structure of <cite>tf.TensorShape</cite> instances.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -397,9 +399,6 @@ of CSR format hotness matrix, thus can be directly constructed.</p>
         };
     </script>
       <script type="text/javascript" src="_static/documentation_options.js"></script>
-      <script type="text/javascript" src="_static/jquery.js"></script>
-      <script type="text/javascript" src="_static/underscore.js"></script>
-      <script type="text/javascript" src="_static/_sphinx_javascript_frameworks_compat.js"></script>
       <script type="text/javascript" src="_static/doctools.js"></script>
       <script type="text/javascript" src="_static/sphinx_highlight.js"></script>
       <script type="text/javascript" src="_static/jquery.fancybox.min.js"></script>

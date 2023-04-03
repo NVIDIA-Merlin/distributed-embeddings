@@ -223,15 +223,16 @@
 <section id="containers">
 <h3>Containers<a class="headerlink" href="#containers" title="Permalink to this heading">¶</a></h3>
 <p>You can build inside 22.03 or later NGC TF2 <a class="reference external" href="https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow">image</a>:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker pull nvcr.io/nvidia/tensorflow:23.01-tf2-py3
+<p>Note: horovod v0.27 and TensorFlow 2.10, alternatively NGC 23.03 container, is required for building v0.3+</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>pull<span class="w"> </span>nvcr.io/nvidia/tensorflow:23.03-tf2-py3
 </pre></div>
 </div>
 </section>
 <section id="build-from-source">
 <h3>Build from source<a class="headerlink" href="#build-from-source" title="Permalink to this heading">¶</a></h3>
 <p>After clone this repository, run:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git submodule update --init --recursive
-make pip_pkg <span class="o">&amp;&amp;</span> pip install artifacts/*.whl
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init<span class="w"> </span>--recursive
+make<span class="w"> </span>pip_pkg<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>artifacts/*.whl
 </pre></div>
 </div>
 <p>Test installation with:</p>
@@ -301,9 +302,6 @@ make pip_pkg <span class="o">&amp;&amp;</span> pip install artifacts/*.whl
         };
     </script>
       <script type="text/javascript" src="_static/documentation_options.js"></script>
-      <script type="text/javascript" src="_static/jquery.js"></script>
-      <script type="text/javascript" src="_static/underscore.js"></script>
-      <script type="text/javascript" src="_static/_sphinx_javascript_frameworks_compat.js"></script>
       <script type="text/javascript" src="_static/doctools.js"></script>
       <script type="text/javascript" src="_static/sphinx_highlight.js"></script>
       <script type="text/javascript" src="_static/jquery.fancybox.min.js"></script>

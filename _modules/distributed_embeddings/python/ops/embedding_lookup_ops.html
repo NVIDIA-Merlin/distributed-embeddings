@@ -170,20 +170,15 @@
            <div itemprop="articleBody">
             
   <h1>Source code for distributed_embeddings.python.ops.embedding_lookup_ops</h1><div class="highlight"><pre>
-<span></span><span class="c1"># SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION &amp; AFFILIATES. All rights reserved.</span>
-<span class="c1"># SPDX-License-Identifier: Apache-2.0</span>
+<span></span><span class="c1"># SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION &amp; AFFILIATES. All rights</span>
+<span class="c1"># reserved. SPDX-License-Identifier: LicenseRef-NvidiaProprietary</span>
 <span class="c1">#</span>
-<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
-<span class="c1"># you may not use this file except in compliance with the License.</span>
-<span class="c1"># You may obtain a copy of the License at</span>
-<span class="c1">#</span>
-<span class="c1"># http://www.apache.org/licenses/LICENSE-2.0</span>
-<span class="c1">#</span>
-<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
-<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
-<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
-<span class="c1"># See the License for the specific language governing permissions and</span>
-<span class="c1"># limitations under the License.</span>
+<span class="c1"># NVIDIA CORPORATION, its affiliates and licensors retain all intellectual</span>
+<span class="c1"># property and proprietary rights in and to this material, related</span>
+<span class="c1"># documentation and any modifications thereto. Any use, reproduction,</span>
+<span class="c1"># disclosure or distribution of this material and related documentation</span>
+<span class="c1"># without an express license agreement from NVIDIA CORPORATION or</span>
+<span class="c1"># its affiliates is strictly prohibited.</span>
 <span class="sd">&quot;&quot;&quot;Embedding ops.&quot;&quot;&quot;</span>
 
 <span class="kn">import</span> <span class="nn">tensorflow</span> <span class="k">as</span> <span class="nn">tf</span>
@@ -193,6 +188,7 @@
 <span class="kn">from</span> <span class="nn">tensorflow.python.ops</span> <span class="kn">import</span> <span class="n">resource_variable_ops</span>
 
 <span class="n">ops</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">load_op_library</span><span class="p">(</span><span class="n">resource_loader</span><span class="o">.</span><span class="n">get_path_to_datafile</span><span class="p">(</span><span class="s1">&#39;_embedding_lookup_ops.so&#39;</span><span class="p">))</span>
+<span class="n">ind_ops</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">load_op_library</span><span class="p">(</span><span class="n">resource_loader</span><span class="o">.</span><span class="n">get_path_to_datafile</span><span class="p">(</span><span class="s1">&#39;_indices_weights_ops.so&#39;</span><span class="p">))</span>
 
 
 <span class="k">def</span> <span class="nf">read_var_no_copy</span><span class="p">(</span><span class="n">res_var</span><span class="p">):</span>
@@ -202,12 +198,12 @@
 
 <span class="nd">@tf</span><span class="o">.</span><span class="n">RegisterGradient</span><span class="p">(</span><span class="s2">&quot;ReadVariableNoCopy&quot;</span><span class="p">)</span>
 <span class="k">def</span> <span class="nf">_read_grad</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">grad</span><span class="p">):</span>
-  <span class="sd">&quot;&quot;&quot;Gradient for read op(no copy).&quot;&quot;&quot;</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;Gradient for read op(no copy).&quot;&quot;&quot;</span>
   <span class="k">return</span> <span class="n">grad</span>
 
 
 <div class="viewcode-block" id="embedding_lookup"><a class="viewcode-back" href="../../../../embedding.html#distributed_embeddings.python.ops.embedding_lookup_ops.embedding_lookup">[docs]</a><span class="k">def</span> <span class="nf">embedding_lookup</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">combiner</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-  <span class="sd">&quot;&quot;&quot;Looks up embeddings for the given `ids` from a embedding tensor.</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;Looks up embeddings for the given `ids` from a embedding tensor.</span>
 
 <span class="sd">  Args:</span>
 <span class="sd">    param (Tensor): A single tensor representing the complete embedding tensor.</span>
@@ -276,7 +272,7 @@
 
 <span class="nd">@tf</span><span class="o">.</span><span class="n">RegisterGradient</span><span class="p">(</span><span class="s2">&quot;EmbeddingLookupVariableHotness&quot;</span><span class="p">)</span>
 <span class="k">def</span> <span class="nf">_embedding_lookup_variable_hotness_grad</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">grad</span><span class="p">):</span>
-  <span class="sd">&quot;&quot;&quot;The gradients for `embedding_lookup_variable_hotness`.</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;The gradients for `embedding_lookup_variable_hotness`.</span>
 <span class="sd">  Args:</span>
 <span class="sd">    op (object): The `embedding_lookup_variable_hotness` `Operation` that we are differentiating,</span>
 <span class="sd">      which we can use to find the inputs and outputs of the original op.</span>
@@ -292,6 +288,29 @@
       <span class="n">flat_ids</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">grad</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">combiner</span><span class="o">=</span><span class="n">op</span><span class="o">.</span><span class="n">get_attr</span><span class="p">(</span><span class="s1">&#39;combiner&#39;</span><span class="p">))</span>
 
   <span class="k">return</span> <span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">IndexedSlices</span><span class="p">(</span><span class="n">unique_grad</span><span class="p">,</span> <span class="n">unique_ids</span><span class="p">,</span> <span class="n">param_shape</span><span class="p">),</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">embedding_lookup_weighted</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">ids</span><span class="p">,</span> <span class="n">weight</span><span class="p">):</span>
+  <span class="k">if</span> <span class="n">ids</span><span class="o">.</span><span class="n">get_shape</span><span class="p">()</span><span class="o">.</span><span class="n">ndims</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Only support 2D input&quot;</span><span class="p">)</span>
+  <span class="c1"># dim1 of ids needs to be same as weight</span>
+  <span class="n">dim_weight</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">shape</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span>
+                        <span class="n">out_type</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int32</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+  <span class="n">dim_ids</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">shape</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">out_type</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int32</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">ids</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">ids</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+  <span class="c1">#if dim_weight != dim_ids:</span>
+  <span class="c1">#  raise ValueError(F&quot;Need matching dimension for pos weight, get {dim_weight} and {dim_ids}&quot;)</span>
+  <span class="k">return</span> <span class="n">ind_ops</span><span class="o">.</span><span class="n">embedding_lookup_with_indices_weights</span><span class="p">(</span><span class="n">read_var_no_copy</span><span class="p">(</span><span class="n">param</span><span class="p">),</span> <span class="n">ids</span><span class="p">,</span> <span class="n">weight</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+
+<span class="nd">@tf</span><span class="o">.</span><span class="n">RegisterGradient</span><span class="p">(</span><span class="s2">&quot;EmbeddingLookupWithIndicesWeights&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">_embedding_lookup_weighted_grad</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">grad</span><span class="p">,</span> <span class="n">grad_empty</span><span class="p">):</span>
+  <span class="n">param_shape</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">shape</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+  <span class="n">flat_ids</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">op</span><span class="o">.</span><span class="n">inputs</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+  <span class="c1"># TODO(Deyu): make return value one tensor, or add de-duplication</span>
+  <span class="n">grad_p</span><span class="p">,</span> <span class="n">grad_w</span> <span class="o">=</span> <span class="n">ind_ops</span><span class="o">.</span><span class="n">embedding_lookup_with_indices_weights_grad</span><span class="p">(</span><span class="n">grad</span><span class="p">,</span> <span class="n">op</span><span class="o">.</span><span class="n">inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                                                                      <span class="n">op</span><span class="o">.</span><span class="n">inputs</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">op</span><span class="o">.</span><span class="n">inputs</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+                                                                      <span class="n">op</span><span class="o">.</span><span class="n">outputs</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+  <span class="k">return</span> <span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">IndexedSlices</span><span class="p">(</span><span class="n">grad_p</span><span class="p">,</span> <span class="n">flat_ids</span><span class="p">,</span> <span class="n">param_shape</span><span class="p">),</span> <span class="kc">None</span><span class="p">,</span> <span class="n">grad_w</span><span class="p">)</span>
 </pre></div>
 
            </div>
@@ -337,9 +356,6 @@
         };
     </script>
       <script type="text/javascript" src="../../../../_static/documentation_options.js"></script>
-      <script type="text/javascript" src="../../../../_static/jquery.js"></script>
-      <script type="text/javascript" src="../../../../_static/underscore.js"></script>
-      <script type="text/javascript" src="../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
       <script type="text/javascript" src="../../../../_static/doctools.js"></script>
       <script type="text/javascript" src="../../../../_static/sphinx_highlight.js"></script>
       <script type="text/javascript" src="../../../../_static/jquery.fancybox.min.js"></script>

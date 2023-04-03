@@ -198,7 +198,7 @@
 
 
 <span class="k">class</span> <span class="nc">CPUInitializer</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">initializers</span><span class="o">.</span><span class="n">Initializer</span><span class="p">):</span>
-  <span class="sd">&quot;&quot;&quot; initializer wrapper to force one-time init onto CPU, avoiding OOM</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot; initializer wrapper to force one-time init onto CPU, avoiding OOM</span>
 <span class="sd">  &quot;&quot;&quot;</span>
 
   <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initializer</span><span class="p">):</span>
@@ -211,7 +211,7 @@
 
 
 <div class="viewcode-block" id="Embedding"><a class="viewcode-back" href="../../../../embedding.html#distributed_embeddings.python.layers.embedding.Embedding">[docs]</a><span class="k">class</span> <span class="nc">Embedding</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Layer</span><span class="p">):</span>
-  <span class="sd">&quot;&quot;&quot;Turns indices into vectors of fixed size.</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;Turns indices into vectors of fixed size.</span>
 
 <span class="sd">  Args:</span>
 <span class="sd">    input_dim (int): Size of the vocabulary, i.e. maximum index + 1.</span>
@@ -239,9 +239,17 @@
                <span class="n">activity_regularizer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                <span class="n">embeddings_constraint</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                <span class="n">combiner</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">synchronization</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">VariableSynchronization</span><span class="o">.</span><span class="n">AUTO</span><span class="p">,</span>
                <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-    <span class="k">if</span> <span class="s1">&#39;input_shape&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
-      <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;input_shape&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="kc">None</span><span class="p">,)</span>
+    <span class="k">if</span> <span class="s2">&quot;input_shape&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+      <span class="c1"># tf.keras.Embedding have this so we try our best to keep the behavior.</span>
+      <span class="k">if</span> <span class="s2">&quot;input_length&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;input_shape&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">input_length</span><span class="p">,)</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Adding unknown input shape here will cause build() to trigger much earlier.</span>
+        <span class="c1"># This would not work for the cases we want to inference indices weight shape though</span>
+        <span class="k">if</span> <span class="n">combiner</span> <span class="o">!=</span> <span class="s1">&#39;indices_weight&#39;</span><span class="p">:</span>
+          <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;input_shape&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="kc">None</span><span class="p">,)</span>
     <span class="k">if</span> <span class="n">input_dim</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">output_dim</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
       <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
           <span class="sa">f</span><span class="s1">&#39;Both input_dim and output_dim should be positive, found </span><span class="si">{</span><span class="n">input_dim</span><span class="si">}</span><span class="s1"> and </span><span class="si">{</span><span class="n">output_dim</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
@@ -260,15 +268,36 @@
     <span class="bp">self</span><span class="o">.</span><span class="n">activity_regularizer</span> <span class="o">=</span> <span class="n">regularizers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">activity_regularizer</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">embeddings_constraint</span> <span class="o">=</span> <span class="n">constraints</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">embeddings_constraint</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">combiner</span> <span class="o">=</span> <span class="n">combiner</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">synchronization</span> <span class="o">=</span> <span class="n">synchronization</span>
 
   <span class="nd">@tf_utils</span><span class="o">.</span><span class="n">shape_type_conversion</span>
-  <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_shape</span><span class="p">):</span>  <span class="c1"># pylint: disable=unused-argument</span>
+  <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_shape</span><span class="p">):</span>
+    <span class="c1"># first create table, which is independent of input shape</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">embeddings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_weight</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">input_dim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_dim</span><span class="p">),</span>
                                       <span class="n">initializer</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">embeddings_initializer_cpu</span><span class="p">,</span>
                                       <span class="n">name</span><span class="o">=</span><span class="s1">&#39;embeddings&#39;</span><span class="p">,</span>
                                       <span class="n">regularizer</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">embeddings_regularizer</span><span class="p">,</span>
                                       <span class="n">constraint</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">embeddings_constraint</span><span class="p">,</span>
+                                      <span class="n">synchronization</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">synchronization</span><span class="p">,</span>
                                       <span class="n">experimental_autocast</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="c1"># shape of additional weights depends on reduction type and input lengths</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">combiner</span> <span class="o">==</span> <span class="s2">&quot;indices_weight&quot;</span><span class="p">:</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="n">input_shape</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s1">&#39;indices_weight combiner used without shape. Consider add input_shape when creating layer&#39;</span>
+        <span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">indices_weights</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">input_shape</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="n">input_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">input_shape</span><span class="p">]</span>
+      <span class="k">for</span> <span class="n">shape</span> <span class="ow">in</span> <span class="n">input_shape</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+          <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+              <span class="s1">&#39;indices_weight combiner used but build() is called with unknown shape.&#39;</span>
+              <span class="s1">&#39;Try avoid building until first batch or add explicit input_shape creating layer.&#39;</span><span class="p">)</span>
+        <span class="c1"># inference shape from input_shape argument or first batch data</span>
+        <span class="c1"># TODO(deyuf): allow full slice</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">indices_weights</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">add_weight</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">[</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]],</span> <span class="n">synchronization</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">synchronization</span><span class="p">))</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">built</span> <span class="o">=</span> <span class="kc">True</span>
 
   <span class="nd">@tf_utils</span><span class="o">.</span><span class="n">shape_type_conversion</span>
@@ -278,9 +307,21 @@
     <span class="k">return</span> <span class="n">input_shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_dim</span><span class="p">,)</span>
 
   <span class="k">def</span> <span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-function-docstring</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+      <span class="n">outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_once</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">outputs</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_call_once</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span> <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">inp</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">inputs</span><span class="p">)]</span>
+    <span class="k">return</span> <span class="n">outputs</span>
+
+  <span class="k">def</span> <span class="nf">_call_once</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-function-docstring</span>
     <span class="n">dtype</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">dtype</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">dtype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;int64&#39;</span><span class="p">,</span> <span class="s1">&#39;int32&#39;</span><span class="p">]:</span>
       <span class="n">inputs</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="s1">&#39;int32&#39;</span><span class="p">)</span>
+    <span class="c1"># short circuit for positional weight</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">combiner</span> <span class="o">==</span> <span class="s2">&quot;indices_weight&quot;</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">embedding_lookup_ops</span><span class="o">.</span><span class="n">embedding_lookup_weighted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">embeddings</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span>
+                                                            <span class="bp">self</span><span class="o">.</span><span class="n">indices_weights</span><span class="p">[</span><span class="n">idx</span><span class="p">])</span>
+
     <span class="c1"># For needed case, compute output shape and replace leading possible None with -1</span>
     <span class="n">out_shape</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">inputs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
@@ -316,7 +357,7 @@
 
 <div class="viewcode-block" id="Embedding.from_config"><a class="viewcode-back" href="../../../../embedding.html#distributed_embeddings.python.layers.embedding.Embedding.from_config">[docs]</a>  <span class="nd">@classmethod</span>
   <span class="k">def</span> <span class="nf">from_config</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Creates a layer from its config.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Creates a layer from its config.</span>
 <span class="sd">    Overriding this to enable instatiating fast embedding from keras embedding configs</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">config</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;mask_zero&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
@@ -324,8 +365,8 @@
     <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="n">config</span><span class="p">)</span></div></div>
 
 
-<span class="k">class</span> <span class="nc">ConcatOneHotEmbedding</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Layer</span><span class="p">):</span>
-  <span class="sd">&quot;&quot;&quot;Concatenated one hot embedding</span>
+<span class="k">class</span> <span class="nc">ConcatEmbedding</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Layer</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;Concatenated one hot embedding</span>
 
 <span class="sd">  Args:</span>
 <span class="sd">    feature_sizes (list): A list of integer indicating number of features of each embedding table</span>
@@ -395,9 +436,6 @@
         };
     </script>
       <script type="text/javascript" src="../../../../_static/documentation_options.js"></script>
-      <script type="text/javascript" src="../../../../_static/jquery.js"></script>
-      <script type="text/javascript" src="../../../../_static/underscore.js"></script>
-      <script type="text/javascript" src="../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
       <script type="text/javascript" src="../../../../_static/doctools.js"></script>
       <script type="text/javascript" src="../../../../_static/sphinx_highlight.js"></script>
       <script type="text/javascript" src="../../../../_static/jquery.fancybox.min.js"></script>
