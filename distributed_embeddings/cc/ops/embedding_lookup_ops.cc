@@ -29,7 +29,7 @@ REGISTER_OP("ReadVariableNoCopy")
       std::vector<shape_inference::ShapeAndType> shape_and_type;
       TF_RETURN_IF_ERROR(shape_inference::ValidateVariableResourceHandle(c, &shape_and_type));
       c->set_output(0, shape_and_type[0].shape);
-      return Status::OK();
+      return OkStatus();
     });
 
 REGISTER_OP("RowToSplit")
@@ -39,7 +39,7 @@ REGISTER_OP("RowToSplit")
     .Output("row_split: Tindices")
     .SetShapeFn([](shape_inference::InferenceContext* c) {
       // TODO
-      return Status::OK();
+      return OkStatus();
     });
 
 REGISTER_OP("EmbeddingLookupVariableHotness")
@@ -65,7 +65,7 @@ REGISTER_OP("EmbeddingLookupVariableHotness")
         outdim_0 -= 1;
       }
       c->set_output(0, c->Matrix(outdim_0, c->Dim(params_shape, 1)));
-      return Status::OK();
+      return OkStatus();
     });
 
 REGISTER_OP("EmbeddingLookupVariableHotnessGrad")
@@ -84,7 +84,7 @@ REGISTER_OP("EmbeddingLookupVariableHotnessGrad")
       c->set_output(0, c->Vector(shape_inference::InferenceContext::kUnknownDim));
       c->set_output(
           1, c->Matrix(shape_inference::InferenceContext::kUnknownDim, c->Dim(grad_shape, 1)));
-      return Status::OK();
+      return OkStatus();
     });
 
 }  // namespace tensorflow
