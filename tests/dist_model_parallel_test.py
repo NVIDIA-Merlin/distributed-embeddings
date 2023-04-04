@@ -21,9 +21,28 @@ from tensorflow.python.keras import keras_parameterized
 import horovod.tensorflow as hvd
 from distributed_embeddings.python.layers import dist_model_parallel as dmp
 
+
 # There are some functions in TF that pylint can't inspect correctly which leads to incorrect
 # report of unexpected-keyword-arg, no-value-for-parameter. Disable them globally here
 # pylint: disable=no-self-use,unexpected-keyword-arg,no-value-for-parameter,missing-docstring
+class CustomEmbedding(tf.keras.layers.Layer):
+
+  def __init__(self, input_dim, output_dim, **kwargs):
+    super().__init__(**kwargs)
+    self.input_dim = input_dim
+    self.output_dim = output_dim
+
+  def build(self, _):
+    self.params = self.add_weight("params",
+                                  shape=[self.input_dim, self.output_dim],
+                                  dtype=tf.float32)
+
+  def call(self, inputs):
+    return tf.gather(params=self.params, indices=inputs, axis=None)
+
+  def get_config(self):
+    config = {'input_dim': self.input_dim, 'output_dim': self.output_dim}
+    return config
 
 
 class EmbeddingListModel(tf.keras.Model):
@@ -35,11 +54,15 @@ class EmbeddingListModel(tf.keras.Model):
                strategy='basic',
                dp_input=True,
                input_table_map=None,
-               column_slice_threshold=None):
+               column_slice_threshold=None,
+               test_custom_layer=False):
     super().__init__()
     self.embeddings = []
     for size in table_sizes:
-      self.embeddings.append(tf.keras.layers.Embedding(*size))
+      if test_custom_layer:
+        self.embeddings.append(CustomEmbedding(*size))
+      else:
+        self.embeddings.append(tf.keras.layers.Embedding(*size))
     if distribute:
       self.dist_embeddings = dmp.DistributedEmbedding(self.embeddings,
                                                       strategy=strategy,
@@ -96,11 +119,11 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
   def gen_table_sizes(self, num_tables=None):
     random.seed(self.seed)
     if num_tables is None:
-      num_tables = random.randint(self.hvd_size, 2 * self.hvd_size)
+      num_tables = random.randint(1, 2 * self.hvd_size)
     table_sizes = []
     for _ in range(num_tables):
       table_height = random.randint(3, 20)
-      table_width = random.randint(3, 15)
+      table_width = random.randint(4, 15)
       table_sizes.append([table_height, table_width])
     return table_sizes
 
@@ -129,7 +152,7 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     dp_inputs = [
         t[self.hvd_rank * local_batch:(self.hvd_rank + 1) * local_batch] for t in global_inputs
     ]
-    mp_inputs = [global_inputs[i] for i in mp_input_ids] if mp_input_ids else None
+    mp_inputs = [global_inputs[i] for i in mp_input_ids] if mp_input_ids else []
 
     return dp_inputs, mp_inputs
 
@@ -274,11 +297,11 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
 
     dp_inputs, _ = self.gen_inputs(table_sizes)
     self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
-    for tables in test_model.dist_embeddings.strategy.table_ids_list:
+    for tables in test_model.dist_embeddings.strategy.table_ids:
       self.assertEqual(len(tables), len(set(tables)))
 
   def test_column_slice_threshold(self):
-    table_sizes = self.gen_table_sizes()
+    table_sizes = self.gen_table_sizes(self.hvd_size + 1)
     ref_model = EmbeddingListModel(table_sizes, distribute=False)
     test_model = EmbeddingListModel(table_sizes,
                                     distribute=True,
@@ -299,6 +322,18 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     mp_input_ids = test_model.dist_embeddings.strategy.input_ids_list[self.hvd_rank]
     dp_inputs, mp_inputs = self.gen_inputs(table_sizes, mp_input_ids=mp_input_ids)
     self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
+
+  def test_8table_width2_auto_concat(self):
+    table_sizes = [[10, 2], [11, 2], [4, 2], [4, 2], [10, 2], [11, 2], [4, 2], [4, 2]]
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes,
+                                    distribute=True,
+                                    strategy='memory_balanced',
+                                    dp_input=False)
+    mp_input_ids = test_model.dist_embeddings.strategy.input_ids_list[self.hvd_rank]
+    dp_inputs, mp_inputs = self.gen_inputs(table_sizes, mp_input_ids=mp_input_ids)
+    self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
+    self.assertEqual(len(test_model.dist_embeddings.weights), 1, "Table fusion failed.")
 
   def test_model_fit_basic(self):
     table_sizes = self.gen_table_sizes()
@@ -349,6 +384,42 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     with self.assertRaises(ValueError):
       test_model.dist_embeddings.set_weights(ref_weights[:num_tables])
       test_model.dense.set_weights(ref_weights[num_tables:])
+
+  def test_indivisible_batch(self):
+    table_sizes = self.gen_table_sizes()
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='basic', dp_input=False)
+
+    # First generate model parallel batches that's divisible by world_size. We then use (batch_size - 1)
+    # which will be indivisible by world_size greater than 1 due to consecutive numbers coprimes
+    mp_input_ids = test_model.dist_embeddings.strategy.input_ids_list[self.hvd_rank]
+    dp_inputs, mp_inputs = self.gen_inputs(table_sizes, mp_input_ids=mp_input_ids)
+    mp_inputs = [inp[1:] for inp in mp_inputs]
+    if self.hvd_size > 1:
+      with self.assertRaisesRegex(ValueError, "not divisible"):
+        self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
+
+  def test_fewer_tables_than_workers(self):
+    table_sizes = self.gen_table_sizes(1)
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='memory_balanced')
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+    self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
+
+  def test_custom_embedding_layer(self):
+    table_sizes = self.gen_table_sizes()
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False, test_custom_layer=True)
+    test_model = EmbeddingListModel(table_sizes,
+                                    distribute=True,
+                                    strategy='basic',
+                                    test_custom_layer=True)
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+    self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
 
 
 if __name__ == "__main__":
