@@ -21,9 +21,28 @@ from tensorflow.python.keras import keras_parameterized
 import horovod.tensorflow as hvd
 from distributed_embeddings.python.layers import dist_model_parallel as dmp
 
+
 # There are some functions in TF that pylint can't inspect correctly which leads to incorrect
 # report of unexpected-keyword-arg, no-value-for-parameter. Disable them globally here
 # pylint: disable=no-self-use,unexpected-keyword-arg,no-value-for-parameter,missing-docstring
+class CustomEmbedding(tf.keras.layers.Layer):
+
+  def __init__(self, input_dim, output_dim, **kwargs):
+    super().__init__(**kwargs)
+    self.input_dim = input_dim
+    self.output_dim = output_dim
+
+  def build(self, _):
+    self.params = self.add_weight("params",
+                                  shape=[self.input_dim, self.output_dim],
+                                  dtype=tf.float32)
+
+  def call(self, inputs):
+    return tf.gather(params=self.params, indices=inputs, axis=None)
+
+  def get_config(self):
+    config = {'input_dim': self.input_dim, 'output_dim': self.output_dim}
+    return config
 
 
 class EmbeddingListModel(tf.keras.Model):
@@ -35,11 +54,15 @@ class EmbeddingListModel(tf.keras.Model):
                strategy='basic',
                dp_input=True,
                input_table_map=None,
-               column_slice_threshold=None):
+               column_slice_threshold=None,
+               test_custom_layer=False):
     super().__init__()
     self.embeddings = []
     for size in table_sizes:
-      self.embeddings.append(tf.keras.layers.Embedding(*size))
+      if test_custom_layer:
+        self.embeddings.append(CustomEmbedding(*size))
+      else:
+        self.embeddings.append(tf.keras.layers.Embedding(*size))
     if distribute:
       self.dist_embeddings = dmp.DistributedEmbedding(self.embeddings,
                                                       strategy=strategy,
@@ -68,19 +91,10 @@ class EmbeddingListModel(tf.keras.Model):
     """
     return None
 
-  def train_step(self, data):
-    with tf.GradientTape() as tape:
-      out = tf.reduce_sum(self(data[0]))
-    tape = dmp.DistributedGradientTape(tape)
-    gradients = tape.gradient(out, self.trainable_variables)
-    self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-    return {"out": out}
 
+class TestHelperMixedin():
 
-class DistributedEmbeddingTest(keras_parameterized.TestCase):
-
-  def __init__(self, *args, **kwargs):
-    super().__init__(*args, **kwargs)
+  def initialize_hvd(self):
     hvd.init()
     gpus = tf.config.experimental.list_physical_devices('GPU')
     for gpu in gpus:
@@ -91,16 +105,15 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     self.hvd_size = hvd.size()
     seed = int(time.time())
     self.seed = hvd.broadcast_object(seed, root_rank=0)
-    self.global_batch = 24
 
   def gen_table_sizes(self, num_tables=None):
     random.seed(self.seed)
     if num_tables is None:
-      num_tables = random.randint(self.hvd_size, 2 * self.hvd_size)
+      num_tables = random.randint(1, 2 * self.hvd_size)
     table_sizes = []
     for _ in range(num_tables):
       table_height = random.randint(3, 20)
-      table_width = random.randint(3, 15)
+      table_width = random.randint(4, 15)
       table_sizes.append([table_height, table_width])
     return table_sizes
 
@@ -129,9 +142,17 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     dp_inputs = [
         t[self.hvd_rank * local_batch:(self.hvd_rank + 1) * local_batch] for t in global_inputs
     ]
-    mp_inputs = [global_inputs[i] for i in mp_input_ids] if mp_input_ids else None
+    mp_inputs = [global_inputs[i] for i in mp_input_ids] if mp_input_ids else []
 
     return dp_inputs, mp_inputs
+
+
+class DistributedEmbeddingTest(keras_parameterized.TestCase, TestHelperMixedin):
+
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.initialize_hvd()
+    self.global_batch = 24
 
   def run_and_test(self, ref_model, ref_inputs, test_model, test_inputs):
     tf.keras.utils.set_random_seed(int(time.time()) + self.hvd_rank)
@@ -160,7 +181,7 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     self.assertAllEqual(ref_out, test_out)
 
     # slicing grad is tricky. so we check weights updated with grad
-    optimizer = tf.keras.optimizers.SGD(learning_rate=1.5, momentum=0)
+    optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=1.5, momentum=0)
     optimizer.apply_gradients(zip(ref_grads, ref_model.variables))
     optimizer.apply_gradients(zip(test_grads, test_model.variables))
     ref_weights = ref_model.get_weights()
@@ -278,7 +299,7 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
       self.assertEqual(len(tables), len(set(tables)))
 
   def test_column_slice_threshold(self):
-    table_sizes = self.gen_table_sizes()
+    table_sizes = self.gen_table_sizes(self.hvd_size + 1)
     ref_model = EmbeddingListModel(table_sizes, distribute=False)
     test_model = EmbeddingListModel(table_sizes,
                                     distribute=True,
@@ -300,39 +321,17 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     dp_inputs, mp_inputs = self.gen_inputs(table_sizes, mp_input_ids=mp_input_ids)
     self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
 
-  def test_model_fit_basic(self):
-    table_sizes = self.gen_table_sizes()
-
+  def test_8table_width2_auto_concat(self):
+    table_sizes = [[10, 2], [11, 2], [4, 2], [4, 2], [10, 2], [11, 2], [4, 2], [4, 2]]
     ref_model = EmbeddingListModel(table_sizes, distribute=False)
-    test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='basic')
-    optimizer = tf.keras.optimizers.SGD(learning_rate=1.5, momentum=0)
-    test_model.compile(optimizer=optimizer)
-
-    dp_inputs, _ = self.gen_inputs(table_sizes)
-    ref_model(dp_inputs)
-    test_model(dp_inputs)
-    # broadcast ref model weights and set test model weights
-    hvd.broadcast_variables(ref_model.variables, root_rank=0)
-    ref_weights = ref_model.get_weights()
-    num_tables = len(ref_model.embeddings)
-    test_model.dist_embeddings.set_weights(ref_weights[:num_tables])
-    test_model.dense.set_weights(ref_weights[num_tables:])
-
-    with tf.GradientTape() as tape:
-      ref_out = tf.reduce_sum(ref_model(dp_inputs))
-    tape = hvd.DistributedGradientTape(tape)
-    ref_grads = tape.gradient(ref_out, ref_model.variables)
-
-    optimizer.apply_gradients(zip(ref_grads, ref_model.variables))
-    ref_weights = ref_model.get_weights()
-
-    test_history = test_model.fit(dp_inputs, epochs=1, steps_per_epoch=1)
-    test_weights = test_model.dist_embeddings.get_weights(True) + test_model.dense.get_weights()
-
-    self.assertAllClose(ref_out, test_history.history['out'][0])
-    for ref_w, test_w in zip(ref_weights, test_weights):
-      # assert close here since order of accumulations(inputs and batch dim) might have changed
-      self.assertAllClose(tf.convert_to_tensor(ref_w), tf.convert_to_tensor(test_w))
+    test_model = EmbeddingListModel(table_sizes,
+                                    distribute=True,
+                                    strategy='memory_balanced',
+                                    dp_input=False)
+    mp_input_ids = test_model.dist_embeddings.strategy.input_ids_list[self.hvd_rank]
+    dp_inputs, mp_inputs = self.gen_inputs(table_sizes, mp_input_ids=mp_input_ids)
+    self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
+    self.assertEqual(len(test_model.dist_embeddings.weights), 1, "Table fusion failed.")
 
   def test_set_weight_uninitialized(self):
     table_sizes = self.gen_table_sizes()
@@ -349,6 +348,140 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     with self.assertRaises(ValueError):
       test_model.dist_embeddings.set_weights(ref_weights[:num_tables])
       test_model.dense.set_weights(ref_weights[num_tables:])
+
+  def test_indivisible_batch(self):
+    table_sizes = self.gen_table_sizes()
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='basic', dp_input=False)
+
+    # First generate model parallel batches that's divisible by world_size. We then use (batch_size - 1)
+    # which will be indivisible by world_size greater than 1 due to consecutive numbers coprimes
+    mp_input_ids = test_model.dist_embeddings.strategy.input_ids_list[self.hvd_rank]
+    dp_inputs, mp_inputs = self.gen_inputs(table_sizes, mp_input_ids=mp_input_ids)
+    mp_inputs = [inp[1:] for inp in mp_inputs]
+    if self.hvd_size > 1:
+      with self.assertRaisesRegex(ValueError, "not divisible"):
+        self.run_and_test(ref_model, dp_inputs, test_model, mp_inputs)
+
+  def test_fewer_tables_than_workers(self):
+    table_sizes = self.gen_table_sizes(1)
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='memory_balanced')
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+    self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
+
+  def test_custom_embedding_layer(self):
+    table_sizes = self.gen_table_sizes()
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False, test_custom_layer=True)
+    test_model = EmbeddingListModel(table_sizes,
+                                    distribute=True,
+                                    strategy='basic',
+                                    test_custom_layer=True)
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+    self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
+
+
+class DistributedEmbeddingModelFitTest(keras_parameterized.TestCase, TestHelperMixedin):
+
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.initialize_hvd()
+    self.global_batch = 12
+
+  def run_and_test(self):
+    raise NotImplementedError
+
+  def test_model_fit_bce(self):
+    table_sizes = self.gen_table_sizes()
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='basic')
+    optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=1.5, momentum=0)
+    bce = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+    label = tf.fill([self.global_batch // self.hvd_size, 5], 0.5)
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+    ref_model(dp_inputs)
+
+    # patched DistributedOptimizer that register local variables on first allreduce automatically
+    dist_optimizer = dmp.DistributedOptimizer(optimizer)
+    test_model.compile(optimizer=dist_optimizer, loss=bce)
+
+    # need to force init so we can set_weight from reference and compare result
+    # no need to broadcast since weight will be overwritten anyway
+    test_model.fit(dp_inputs, label, epochs=1, steps_per_epoch=1)
+
+    # broadcast ref model weights and set test model weights
+    hvd.broadcast_variables(ref_model.variables, root_rank=0)
+    ref_weights = ref_model.get_weights()
+    num_tables = len(ref_model.embeddings)
+
+    test_model.dist_embeddings.set_weights(ref_weights[:num_tables])
+    test_model.dense.set_weights(ref_weights[num_tables:])
+
+    with tf.GradientTape() as tape:
+      ref_loss = bce(label, ref_model(dp_inputs))
+    tape = hvd.DistributedGradientTape(tape)
+    ref_grads = tape.gradient(ref_loss, ref_model.variables)
+    optimizer.apply_gradients(zip(ref_grads, ref_model.variables))
+    ref_weights = ref_model.get_weights()
+
+    test_history = test_model.fit(dp_inputs, label, epochs=1, steps_per_epoch=1)
+    test_weights = test_model.dist_embeddings.get_weights(True) + test_model.dense.get_weights()
+
+    self.assertAllClose(ref_loss, test_history.history['loss'][0])
+    for ref_w, test_w in zip(ref_weights, test_weights):
+      # assert close here since order of accumulations(inputs and batch dim) might have changed
+      self.assertAllClose(tf.convert_to_tensor(ref_w), tf.convert_to_tensor(test_w))
+
+  def test_broadcast_callback(self):
+    tf.keras.utils.set_random_seed(int(time.time()) + self.hvd_rank)
+    num_tables = 7
+    table_sizes = [[11, 7], [5, 8], [3, 8], [5, 8], [12, 25], [3, 12], [7, 13]]
+
+    test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='basic')
+
+    # create same input on all worker
+    dup_ids = [
+        tf.random.uniform(shape=[3], minval=0, maxval=table_sizes[i][0], dtype=tf.int64)
+        for i in range(num_tables)
+    ]
+    dup_ids = hvd.broadcast_object(dup_ids, root_rank=0)
+
+    optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=1.5, momentum=0)
+    bce = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+    label = tf.fill([3, 5], 0.3)
+    # optimizer should not matter since broadcast happens after
+    test_model.compile(optimizer=optimizer, loss=bce)
+    callback = dmp.BroadcastGlobalVariablesCallback(0)
+
+    # run one batch with broadcasting callback
+    test_history = test_model.fit(dup_ids, label, epochs=1, steps_per_epoch=1, callbacks=[callback])
+
+    # losses from initial batch should be different
+    loss = test_history.history['loss'][0]
+    losses = tf.unstack(hvd.allgather(tf.expand_dims(loss, axis=0)))
+    for loss in losses[1:]:
+      self.assertNotAllClose(losses[0], loss)
+
+    # same output from each worker after broadcast data parallel weights
+    test_out = test_model(dup_ids)
+    test_outs = tf.unstack(hvd.allgather(tf.expand_dims(test_out, axis=0)))
+    for out1 in test_outs[1:]:
+      self.assertAllEqual(test_outs[0], out1)
+
+    # now try model fit again, loss should be same
+    test_history = test_model.fit(dup_ids, label, epochs=1, steps_per_epoch=1)
+    loss = test_history.history['loss'][0]
+    losses = tf.unstack(hvd.allgather(tf.expand_dims(loss, axis=0)))
+    for loss in losses[1:]:
+      # TODO(deyuf): understand why model.fit causes 1e-8 error sometime
+      self.assertAllCloseAccordingToType(losses[0], loss)
 
 
 if __name__ == "__main__":

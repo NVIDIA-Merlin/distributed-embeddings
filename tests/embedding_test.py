@@ -181,12 +181,12 @@ class EmbeddingTest(keras_parameterized.TestCase):
     self.assertAllEqual(tf.convert_to_tensor(gs[0]), tf.convert_to_tensor(ref_gs[0]))
 
 
-class ConcatEmbeddingTest(test.TestCase):
+class ConcatOneHotEmbeddingTest(test.TestCase):
 
   def test_smoke(self):
     feature_sizes = [3, 5, 7, 11]
     embedding_width = 3
-    test_embedding = embedding.ConcatEmbedding(feature_sizes, embedding_width)
+    test_embedding = embedding.ConcatOneHotEmbedding(feature_sizes, embedding_width)
     indices = tf.constant([[1, 2, 3, 4], [2, 4, 6, 10]])
     test_embedding(indices)
 
