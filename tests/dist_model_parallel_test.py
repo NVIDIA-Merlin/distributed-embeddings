@@ -183,7 +183,7 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
     self.assertAllEqual(ref_out, test_out)
 
     # slicing grad is tricky. so we check weights updated with grad
-    optimizer = tf.keras.optimizers.SGD(learning_rate=1.5, momentum=0)
+    optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=1.5, momentum=0)
     optimizer.apply_gradients(zip(ref_grads, ref_model.variables))
     optimizer.apply_gradients(zip(test_grads, test_model.variables))
     ref_weights = ref_model.get_weights()
@@ -340,7 +340,7 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase):
 
     ref_model = EmbeddingListModel(table_sizes, distribute=False)
     test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='basic')
-    optimizer = tf.keras.optimizers.SGD(learning_rate=1.5, momentum=0)
+    optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=1.5, momentum=0)
     test_model.compile(optimizer=optimizer)
 
     dp_inputs, _ = self.gen_inputs(table_sizes)
