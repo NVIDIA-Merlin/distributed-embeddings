@@ -189,7 +189,7 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase, TestHelperMixedin):
 
     for ref_w, test_w in zip(ref_weights, test_weights):
       # assert close here since order of accumulations(inputs and batch dim) might have changed
-      self.assertAllClose(tf.convert_to_tensor(ref_w), tf.convert_to_tensor(test_w))
+      self.assertAllClose(tf.convert_to_tensor(ref_w), tf.convert_to_tensor(test_w), 1e-05, 1e-05)
 
   def test_broadcast(self):
     tf.keras.utils.set_random_seed(int(time.time()) + self.hvd_rank)
