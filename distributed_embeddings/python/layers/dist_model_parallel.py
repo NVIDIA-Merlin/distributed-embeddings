@@ -436,7 +436,7 @@ class DistributedEmbedding(tf.keras.layers.Layer):
 
     # offset inputs
     inputs = [
-        inp if offset is None else inp + tf.cast(offset, inp.dtype)
+        inp if offset is None else tf.cast(inp, tf.int64) + offset
         for inp, offset in zip(inputs, self.offsets)
     ]
     # do embedding
