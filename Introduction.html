@@ -99,8 +99,9 @@
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Distributed Embeddings</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#features">Features</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#distributed-model-parallel-wrapper">Distributed model parallel wrapper</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#distributed-model-parallel-wrappers">Distributed Model Parallel Wrappers</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#embedding-layers">Embedding Layers</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#integerlookup-layers">IntegerLookup Layers</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#installation">Installation</a><ul>
@@ -204,13 +205,18 @@
 <p>Refer to <a class="reference external" href="https://developer.nvidia.com/blog/fast-terabyte-scale-recommender-training-made-easy-with-nvidia-merlin-distributed-embeddings/">NVIDIA Developer blog</a> about Terabyte-scale Recommender Training for more details.</p>
 <section id="features">
 <h2>Features<a class="headerlink" href="#features" title="Permalink to this heading">¶</a></h2>
-<section id="distributed-model-parallel-wrapper">
-<h3>Distributed model parallel wrapper<a class="headerlink" href="#distributed-model-parallel-wrapper" title="Permalink to this heading">¶</a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.dist_model_parallel</span></code> is a tool to enable model parallel training by changing only three lines of your script. It can also be used alongside data parallel to form hybrid parallel training. Users can easily experiment large scale embeddings beyond single GPU’s memory capacity without complex code to handle cross-worker communication.</p>
+<section id="distributed-model-parallel-wrappers">
+<h3>Distributed Model Parallel Wrappers<a class="headerlink" href="#distributed-model-parallel-wrappers" title="Permalink to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">dist_model_parallel</span></code> contain tools to enable model parallel training by changing only three lines of your script. It can also be used alongside data parallel to form hybrid parallel training. Users can easily experiment large scale embeddings beyond single GPU’s memory capacity without complex code to handle cross-worker communication.</p>
+<p>To start model parallel, simply wrap a list of keras Embedding layers with <code class="docutils literal notranslate"><span class="pre">dist_model_parallel.DistributedEmbedding</span></code></p>
 </section>
 <section id="embedding-layers">
 <h3>Embedding Layers<a class="headerlink" href="#embedding-layers" title="Permalink to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.Embedding</span></code> combines functionalities of <code class="docutils literal notranslate"><span class="pre">tf.keras.layers.Embedding</span></code> and <code class="docutils literal notranslate"><span class="pre">tf.nn.embedding_lookup_sparse</span></code> under a unified Keras layer API. The backend is designed to achieve high GPU efficiency.</p>
+</section>
+<section id="integerlookup-layers">
+<h3>IntegerLookup Layers<a class="headerlink" href="#integerlookup-layers" title="Permalink to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.IntegerLookup</span></code> extends functionalities of <code class="docutils literal notranslate"><span class="pre">tf.keras.layers.IntegerLookup</span></code> by removing requirement of pre-built vocabulary. Instead, vocabulary is built on-the-fly. This new functionality is supported on both CPU and GPU with custom backend.</p>
 <p>See more details at <a class="reference external" href="https://nvidia-merlin.github.io/distributed-embeddings/userguide.html">User Guide</a></p>
 </section>
 </section>

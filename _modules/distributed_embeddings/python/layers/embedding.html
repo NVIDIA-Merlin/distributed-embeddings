@@ -239,17 +239,9 @@
                <span class="n">activity_regularizer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                <span class="n">embeddings_constraint</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                <span class="n">combiner</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-               <span class="n">synchronization</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">VariableSynchronization</span><span class="o">.</span><span class="n">AUTO</span><span class="p">,</span>
                <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-    <span class="k">if</span> <span class="s2">&quot;input_shape&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
-      <span class="c1"># tf.keras.Embedding have this so we try our best to keep the behavior.</span>
-      <span class="k">if</span> <span class="s2">&quot;input_length&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
-        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;input_shape&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">input_length</span><span class="p">,)</span>
-      <span class="k">else</span><span class="p">:</span>
-        <span class="c1"># Adding unknown input shape here will cause build() to trigger much earlier.</span>
-        <span class="c1"># This would not work for the cases we want to inference indices weight shape though</span>
-        <span class="k">if</span> <span class="n">combiner</span> <span class="o">!=</span> <span class="s1">&#39;indices_weight&#39;</span><span class="p">:</span>
-          <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;input_shape&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="kc">None</span><span class="p">,)</span>
+    <span class="k">if</span> <span class="s1">&#39;input_shape&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+      <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;input_shape&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="kc">None</span><span class="p">,)</span>
     <span class="k">if</span> <span class="n">input_dim</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">output_dim</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
       <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
           <span class="sa">f</span><span class="s1">&#39;Both input_dim and output_dim should be positive, found </span><span class="si">{</span><span class="n">input_dim</span><span class="si">}</span><span class="s1"> and </span><span class="si">{</span><span class="n">output_dim</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
@@ -268,36 +260,15 @@
     <span class="bp">self</span><span class="o">.</span><span class="n">activity_regularizer</span> <span class="o">=</span> <span class="n">regularizers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">activity_regularizer</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">embeddings_constraint</span> <span class="o">=</span> <span class="n">constraints</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">embeddings_constraint</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">combiner</span> <span class="o">=</span> <span class="n">combiner</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">synchronization</span> <span class="o">=</span> <span class="n">synchronization</span>
 
   <span class="nd">@tf_utils</span><span class="o">.</span><span class="n">shape_type_conversion</span>
-  <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_shape</span><span class="p">):</span>
-    <span class="c1"># first create table, which is independent of input shape</span>
+  <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_shape</span><span class="p">):</span>  <span class="c1"># pylint: disable=unused-argument</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">embeddings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_weight</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">input_dim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_dim</span><span class="p">),</span>
                                       <span class="n">initializer</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">embeddings_initializer_cpu</span><span class="p">,</span>
                                       <span class="n">name</span><span class="o">=</span><span class="s1">&#39;embeddings&#39;</span><span class="p">,</span>
                                       <span class="n">regularizer</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">embeddings_regularizer</span><span class="p">,</span>
                                       <span class="n">constraint</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">embeddings_constraint</span><span class="p">,</span>
-                                      <span class="n">synchronization</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">synchronization</span><span class="p">,</span>
                                       <span class="n">experimental_autocast</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-    <span class="c1"># shape of additional weights depends on reduction type and input lengths</span>
-    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">combiner</span> <span class="o">==</span> <span class="s2">&quot;indices_weight&quot;</span><span class="p">:</span>
-      <span class="k">if</span> <span class="ow">not</span> <span class="n">input_shape</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="s1">&#39;indices_weight combiner used without shape. Consider add input_shape when creating layer&#39;</span>
-        <span class="p">)</span>
-      <span class="bp">self</span><span class="o">.</span><span class="n">indices_weights</span> <span class="o">=</span> <span class="p">[]</span>
-      <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">input_shape</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
-        <span class="n">input_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">input_shape</span><span class="p">]</span>
-      <span class="k">for</span> <span class="n">shape</span> <span class="ow">in</span> <span class="n">input_shape</span><span class="p">:</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
-          <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-              <span class="s1">&#39;indices_weight combiner used but build() is called with unknown shape.&#39;</span>
-              <span class="s1">&#39;Try avoid building until first batch or add explicit input_shape creating layer.&#39;</span><span class="p">)</span>
-        <span class="c1"># inference shape from input_shape argument or first batch data</span>
-        <span class="c1"># TODO(deyuf): allow full slice</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">indices_weights</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">add_weight</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">[</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]],</span> <span class="n">synchronization</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">synchronization</span><span class="p">))</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">built</span> <span class="o">=</span> <span class="kc">True</span>
 
   <span class="nd">@tf_utils</span><span class="o">.</span><span class="n">shape_type_conversion</span>
@@ -307,21 +278,9 @@
     <span class="k">return</span> <span class="n">input_shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_dim</span><span class="p">,)</span>
 
   <span class="k">def</span> <span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-function-docstring</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
-      <span class="n">outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_once</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-      <span class="n">outputs</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_call_once</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span> <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">inp</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">inputs</span><span class="p">)]</span>
-    <span class="k">return</span> <span class="n">outputs</span>
-
-  <span class="k">def</span> <span class="nf">_call_once</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-function-docstring</span>
     <span class="n">dtype</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">dtype</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">dtype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;int64&#39;</span><span class="p">,</span> <span class="s1">&#39;int32&#39;</span><span class="p">]:</span>
       <span class="n">inputs</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="s1">&#39;int32&#39;</span><span class="p">)</span>
-    <span class="c1"># short circuit for positional weight</span>
-    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">combiner</span> <span class="o">==</span> <span class="s2">&quot;indices_weight&quot;</span><span class="p">:</span>
-      <span class="k">return</span> <span class="n">embedding_lookup_ops</span><span class="o">.</span><span class="n">embedding_lookup_weighted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">embeddings</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span>
-                                                            <span class="bp">self</span><span class="o">.</span><span class="n">indices_weights</span><span class="p">[</span><span class="n">idx</span><span class="p">])</span>
-
     <span class="c1"># For needed case, compute output shape and replace leading possible None with -1</span>
     <span class="n">out_shape</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">inputs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
@@ -365,7 +324,7 @@
     <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="n">config</span><span class="p">)</span></div></div>
 
 
-<span class="k">class</span> <span class="nc">ConcatEmbedding</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Layer</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">ConcatOneHotEmbedding</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Layer</span><span class="p">):</span>
 <span class="w">  </span><span class="sd">&quot;&quot;&quot;Concatenated one hot embedding</span>
 
 <span class="sd">  Args:</span>
@@ -391,6 +350,89 @@
     <span class="n">embedding_out</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">params</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">params</span><span class="p">,</span> <span class="n">indices</span><span class="o">=</span><span class="n">offset_indices</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">embedding_out</span>
+
+
+<span class="c1"># pylint: disable=missing-class-docstring</span>
+<span class="k">class</span> <span class="nc">IntegerLookup</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Layer</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  A preprocessing layer which maps integer features to contiguous ranges.</span>
+<span class="sd">  Vocabulary is generated on the fly, static vocabulary and adapt() will be supported.</span>
+<span class="sd">  Partially support features of tf.keras.layers.IntegerLookup.</span>
+<span class="sd">  Frequency of keys are counted when GPU algorithm is used.</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">max_tokens</span><span class="p">,</span> <span class="n">use_gpu</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+    <span class="n">max_tokens</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">max_tokens</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">capacity</span> <span class="o">=</span> <span class="n">max_tokens</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">use_gpu</span> <span class="o">=</span> <span class="n">use_gpu</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_gpu</span><span class="p">:</span>
+      <span class="c1"># TODO(deyuf): run some benchmark to make sure 32bit here does not cause problem</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">Variable</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">max_tokens</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,),</span> <span class="n">tf</span><span class="o">.</span><span class="n">uint32</span><span class="p">),</span> <span class="n">trainable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+      <span class="c1"># Reserve first index for oov token. The inplementation doesn&#39;t require a oov token like -1</span>
+      <span class="c1"># Alternatively, we could define an oov token and insert with 0.</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">count</span><span class="o">.</span><span class="n">scatter_update</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">IndexedSlices</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+      <span class="c1"># TODO: explore adjusting table size on the fly</span>
+      <span class="c1"># TODO: table init on first lookup now. should separate init op out.</span>
+      <span class="c1"># Initialize the table so it can be used across ops. Since all cucollection need is pointer,</span>
+      <span class="c1"># we don&#39;t need a &quot;tableop&quot; like native to return resource handle.</span>
+      <span class="c1"># 1.5x load factor, 2x keys + values</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">table</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">Variable</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">2</span> <span class="o">*</span> <span class="nb">int</span><span class="p">(</span><span class="mf">1.5</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">capacity</span><span class="p">),),</span> <span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">),</span> <span class="n">trainable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">with</span> <span class="n">tf</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s1">&#39;/CPU&#39;</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">table</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">experimental</span><span class="o">.</span><span class="n">DenseHashTable</span><span class="p">(</span><span class="n">key_dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span>
+                                                           <span class="n">value_dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">,</span>
+                                                           <span class="n">default_value</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                                                           <span class="n">empty_key</span><span class="o">=-</span><span class="mi">2</span><span class="p">,</span>
+                                                           <span class="n">deleted_key</span><span class="o">=-</span><span class="mi">3</span><span class="p">)</span>
+
+        <span class="c1"># TODO(deyuf): benchmark code that handles max_token for cpu table</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">table</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_empty_slot</span> <span class="o">=</span> <span class="n">max_tokens</span>
+
+  <span class="k">def</span> <span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_gpu</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">embedding_lookup_ops</span><span class="o">.</span><span class="n">integer_lookup</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">table</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">count</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">capacity</span><span class="p">)</span>
+    <span class="c1"># This is efficient on cpu, especially with power law distribution data</span>
+    <span class="k">with</span> <span class="n">tf</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s1">&#39;/CPU&#39;</span><span class="p">):</span>
+      <span class="n">input_shape</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">shape</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+      <span class="n">inputs</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+      <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_empty_slot</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">keys</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">table</span><span class="o">.</span><span class="n">lookup</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span>
+        <span class="n">new_keys</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">vals</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">),</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))[:</span><span class="bp">self</span><span class="o">.</span><span class="n">num_empty_slot</span><span class="p">]</span>
+        <span class="n">num_insert</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">shape</span><span class="p">(</span><span class="n">new_keys</span><span class="p">,</span> <span class="n">out_type</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_empty_slot</span> <span class="o">-=</span> <span class="n">num_insert</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">table</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">new_keys</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">table</span><span class="o">.</span><span class="n">size</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">table</span><span class="o">.</span><span class="n">size</span><span class="p">()</span> <span class="o">+</span> <span class="n">num_insert</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">table</span><span class="o">.</span><span class="n">lookup</span><span class="p">(</span><span class="n">inputs</span><span class="p">),</span> <span class="n">input_shape</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="nf">get_vocabulary</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1"># TODO: may need a new api as gpu lookup may not be contiguous</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_gpu</span><span class="p">:</span>
+      <span class="c1"># just to be sure, we sort the index returned by where so key/value pair remain together</span>
+      <span class="n">used_ids</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">table</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+      <span class="n">kv</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">table</span><span class="p">,</span> <span class="n">used_ids</span><span class="p">)</span>
+      <span class="c1"># split k,v</span>
+      <span class="n">keys</span> <span class="o">=</span> <span class="n">kv</span><span class="p">[</span><span class="mi">0</span><span class="p">::</span><span class="mi">2</span><span class="p">]</span>
+      <span class="n">vals</span> <span class="o">=</span> <span class="n">kv</span><span class="p">[</span><span class="mi">1</span><span class="p">::</span><span class="mi">2</span><span class="p">]</span>
+      <span class="c1"># filter out oov keys that mapped to 0</span>
+      <span class="n">non_oov_ids</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">vals</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">),</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+      <span class="n">keys</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">non_oov_ids</span><span class="p">)</span>
+      <span class="n">vals</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="n">non_oov_ids</span><span class="p">)</span>
+      <span class="c1"># sort output dict into lookup value order</span>
+      <span class="n">sort_order</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">vals</span><span class="p">)</span>
+      <span class="n">keys</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">sort_order</span><span class="p">)</span>
+      <span class="k">return</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">keys</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+    <span class="n">keys</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">table</span><span class="o">.</span><span class="n">export</span><span class="p">()</span>
+    <span class="n">unique_keys</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+    <span class="c1"># remove reserved empty and deleted key</span>
+    <span class="n">unique_keys</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">unique_keys</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">unique_keys</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">2</span><span class="p">),</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+    <span class="n">unique_keys</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">unique_keys</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">unique_keys</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">3</span><span class="p">),</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+    <span class="n">unique_vals</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">table</span><span class="o">.</span><span class="n">lookup</span><span class="p">(</span><span class="n">unique_keys</span><span class="p">)</span>
+    <span class="n">sort_order</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">unique_vals</span><span class="p">)</span>
+    <span class="n">unique_keys</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">unique_keys</span><span class="p">,</span> <span class="n">sort_order</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">unique_keys</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
 </pre></div>
 
            </div>
