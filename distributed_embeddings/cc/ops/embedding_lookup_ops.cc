@@ -97,7 +97,7 @@ REGISTER_OP("IntegerLookup")
     .Output("values: T")
     .SetShapeFn([](shape_inference::InferenceContext* c) {
       c->set_output(0, c->input(2));
-      return Status::OK();
+      return OkStatus();
     });
 
 }  // namespace tensorflow
