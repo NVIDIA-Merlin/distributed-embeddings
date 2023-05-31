@@ -48,6 +48,12 @@ struct EmbeddingLookupVariableHotnessGradFunctor {
                   int64_t dense_shape_dim0, int64_t max_red_len, Combiner combiner) const;
 };
 
+template <typename Device, typename T, typename CountT>
+struct IntegerLookupFunctor {
+  void operator()(OpKernelContext* context, T* table_ptr, CountT* count_ptr, const T* keys_ptr,
+                  T* values_ptr, T num_ele, bool init, int64_t capacity) const;
+};
+
 }  // namespace tensorflow
 
 #endif  // DISTRIBUTED_EMBEDDING_CC_KERNELS_EMBEDDING_LOOKUP_H_

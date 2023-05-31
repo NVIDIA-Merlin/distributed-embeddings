@@ -22,10 +22,10 @@
 #include <cooperative_groups.h>
 
 #include "cub/cub.cuh"
+#include "cuco/static_map.cuh"
 #include "embedding_lookup.h"
 #include "tensorflow/core/lib/core/bits.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
-
 namespace cg = cooperative_groups;
 
 namespace tensorflow {
@@ -375,6 +375,146 @@ struct RowToSplitFunctor<Eigen::GpuDevice, TIndex> {
   }
 };
 
+// The kernel does following things:
+// - generate available indices from count array
+// - try insert new value from available indices with each key
+// - insert either succeed, or get existed value from pervious batch/other parallel threads
+// - now we have needed output, update count array for future available index generation
+template <typename ViewT, typename T, typename CountT>
+__global__ void SearchAndUpdate(ViewT view, const T* keys, T* values, T* avails, CountT* counts,
+                                T num_elem, int* g_counter, T capacity) {
+  cg::grid_group grid = cg::this_grid();
+  int tid = blockDim.x * blockIdx.x + threadIdx.x;
+  // set global atomic counters to save a memset outside
+  g_counter[0] = 0;
+  g_counter[1] = 0;
+  grid.sync();
+
+  // Find at most num_elem indices where count is zero
+  // TODO: maybe randomize where to start and avoid slowdown when half full?
+  CountT count;
+  int avail_offset;
+  for (int i = tid; i < capacity; i += blockDim.x * gridDim.x) {
+    count = counts[i];
+    if (0 == count) {
+      avail_offset = atomicAdd(g_counter, 1);
+      if (avail_offset >= num_elem) break;
+      avails[avail_offset] = i;
+    }
+  }
+  grid.sync();
+
+  // now we have available indices, try insert them with keys
+  int num_avail = g_counter[0];
+  T key, value;
+  // First deal with case where we still have empty slot but not enough to do in one go
+  if (num_avail > 0 && num_avail < num_elem) {
+    if (tid < num_avail) {
+      int cur_offset = atomicAdd(g_counter + 1, 1);
+      value = avails[tid];
+      while (cur_offset < num_elem) {
+        key = keys[cur_offset];
+#if __CUDA_ARCH__ < 700
+        if constexpr (cuco::detail::is_packable<ViewT::value_type>()) {
+#endif
+          auto [iter, inserted] = view.insert_and_find(cuco::make_pair(key, value));
+          counts[iter->second] += 1;
+          values[cur_offset] = iter->second;
+          if (inserted) break;
+#if __CUDA_ARCH__ < 700
+          // TODO(deyuf): add fallback logic determinism and pre-volta gpu. might need multi-kernel
+        }
+#endif
+        cur_offset = atomicAdd(g_counter + 1, 1);
+      }
+    }
+    // above run could stop before checking all keys, when all avaiable indices are inserted
+    grid.sync();
+
+    // threads with tid>g_counter will continue and insert_and_find remaining keys with default
+    // g_counter >= num_elem means all thread should returns since all keys are looked up already
+    if (tid < g_counter[1]) return;
+  }
+  // drop rest of no longer needed threads after possible grid sync
+  if (tid >= num_elem) return;
+
+  // Three cases we end up here:
+  // - we have enough new indices for use in one go, all num_elem threads got here
+  // - there is no new indices to use at all, all num_elem threads got here
+  // - we run out of new indices during above if, only tid matching never looked up key got here
+  key = keys[tid];
+
+  // Don't insert OOV keys so table remain not full
+  if (num_avail >= num_elem) {
+    value = avails[tid];
+#if __CUDA_ARCH__ < 700
+    if constexpr (cuco::detail::is_packable<ViewT::value_type>()) {
+#endif
+      auto [iter, inserted] = view.insert_and_find(cuco::make_pair(key, value));
+      if (!inserted) value = iter->second;
+#if __CUDA_ARCH__ < 700
+      // TODO(deyuf): need fallback since pre-volta gpu will fail.
+    }
+#endif
+  } else {
+    value = 0;
+    auto s_view = typename cuco::static_map<T, T>::device_view(view);
+    auto found = s_view.find(key);
+    if (found != s_view.end()) value = found->second;
+  }
+  // update count so this index won't be used again
+  atomicAdd(counts + value, (CountT)1);
+  // write out to output
+  values[tid] = value;
+}
+
+template <typename T, typename CountT>
+struct IntegerLookupFunctor<Eigen::GpuDevice, T, CountT> {
+  void operator()(OpKernelContext* context, T* table_ptr, CountT* count_ptr, const T* keys_ptr,
+                  T* value_ptr, T num_elem, bool init, int64_t capacity) const {
+    const auto& cu_stream = GetGpuStream(context);
+
+    // get a mutable view from TF managed memory, initialize if needed
+    auto table_capacity = capacity * 3 / 2;
+    T constexpr empty_key_sentinel = -1;
+    T constexpr empty_value_sentinel = -1;
+    auto slot = reinterpret_cast<typename cuco::static_map<T, T>::pair_atomic_type*>(table_ptr);
+    if (init) {
+      using atomic_key_type = typename cuco::static_map<T, T>::atomic_key_type;
+      using atomic_mapped_type = typename cuco::static_map<T, T>::atomic_mapped_type;
+      auto grid_size = (table_capacity + 1023) / 1024;
+      cuco::detail::initialize<256, atomic_key_type, atomic_mapped_type>
+          <<<grid_size, 256, 0, cu_stream>>>(slot, cuco::empty_key{empty_key_sentinel},
+                                             cuco::empty_value{empty_value_sentinel},
+                                             table_capacity);
+    }
+    auto view = typename cuco::static_map<T, T>::device_mutable_view(
+        slot, table_capacity, cuco::empty_key{empty_key_sentinel},
+        cuco::empty_value{empty_value_sentinel});
+
+    // counters to figure out offsets between threads
+    Tensor atomic_counter;
+    context->allocate_temp(DT_INT32, TensorShape({static_cast<int64_t>(2)}), &atomic_counter);
+    auto atomic_counter_ptr = atomic_counter.flat<int>().data();
+    // DRAM workspace buffer to store new indices available for use
+    Tensor temp_avail;
+    context->allocate_temp(DataTypeToEnum<T>::value, TensorShape({static_cast<int64_t>(num_elem)}),
+                           &temp_avail);
+    auto temp_avail_ptr = temp_avail.flat<int64_t>().data();
+
+    int num_threads = 512;
+    // TODO: add loop for batch dim and get device prop from TF to figure safe/largest num_blocks
+    // For now, use max(enough_for_batch, 64) since most cards we care have more than 64 sm
+    auto num_blocks = (num_elem + num_threads - 1) / num_threads;
+    num_blocks = num_blocks < 64 ? 64 : num_blocks;
+    void* args[] = {&view,      &keys_ptr, &value_ptr,          &temp_avail_ptr,
+                    &count_ptr, &num_elem, &atomic_counter_ptr, &capacity};
+    cudaLaunchCooperativeKernel(
+        (void*)SearchAndUpdate<typename cuco::static_map<T, T>::device_mutable_view, T, CountT>,
+        num_blocks, num_threads, args, 0, cu_stream);
+  }
+};
+
 template <typename T, typename TIndex>
 struct EmbeddingLookupVariableHotnessFunctor<Eigen::GpuDevice, T, TIndex> {
   void operator()(const Eigen::GpuDevice& d, T* output_ptr, const T* param_ptr,
@@ -640,5 +780,6 @@ template struct EmbeddingLookupVariableHotnessFunctor<Eigen::GpuDevice, float, i
 template struct EmbeddingLookupVariableHotnessFunctor<Eigen::GpuDevice, float, int32_t>;
 template struct EmbeddingLookupVariableHotnessGradFunctor<Eigen::GpuDevice, float, int64_t>;
 template struct EmbeddingLookupVariableHotnessGradFunctor<Eigen::GpuDevice, float, int32_t>;
+template struct IntegerLookupFunctor<Eigen::GpuDevice, int64_t, uint32_t>;
 
 }  // namespace tensorflow

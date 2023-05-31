@@ -87,4 +87,17 @@ REGISTER_OP("EmbeddingLookupVariableHotnessGrad")
       return OkStatus();
     });
 
+REGISTER_OP("IntegerLookup")
+    .Input("table_handle: resource")
+    .Input("count_handle: resource")
+    .Input("keys: T")
+    .Attr("capacity: int")
+    .Attr("T: {int64}")
+    .Attr("count_dtype: type")
+    .Output("values: T")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      c->set_output(0, c->input(2));
+      return Status::OK();
+    });
+
 }  // namespace tensorflow

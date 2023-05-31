@@ -665,7 +665,7 @@ class DistributedEmbedding(tf.keras.layers.Layer):
 
   @tf_utils.shape_type_conversion
   def build(self, input_shape):
-    if input_shape is not None:
+    if input_shape is not None and None not in input_shape[0]:
       # Do some checks to detect cases that are not supported
       if not isinstance(input_shape, (list, tuple)):
         input_shape = [input_shape]

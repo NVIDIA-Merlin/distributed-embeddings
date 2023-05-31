@@ -120,3 +120,9 @@ def _embedding_lookup_variable_hotness_grad(op, grad):
       flat_ids, offsets, grad, op.inputs[0], combiner=op.get_attr('combiner'))
 
   return (tf.IndexedSlices(unique_grad, unique_ids, param_shape), None, None)
+
+
+def integer_lookup(table, count, keys, capacity):
+  resource_variable_ops.variable_accessed(table)
+  resource_variable_ops.variable_accessed(count)
+  return ops.integer_lookup(table.handle, count.handle, keys, capacity, count.dtype)

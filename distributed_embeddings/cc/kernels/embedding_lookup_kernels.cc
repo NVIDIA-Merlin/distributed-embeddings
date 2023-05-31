@@ -125,11 +125,46 @@ class EmbeddingLookupVariableHotnessGradOp : public OpKernel {
   string _combiner;
 };
 
+template <typename Device, typename T, typename CountT>
+class IntegerLookupOp : public OpKernel {
+ public:
+  explicit IntegerLookupOp(OpKernelConstruction* context) : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("capacity", &capacity_));
+  }
+
+  void Compute(OpKernelContext* context) override {
+    core::RefCountPtr<Var> table;
+    OP_REQUIRES_OK(context, LookupResource(context, HandleFromInput(context, 0), &table));
+    core::RefCountPtr<Var> count;
+    OP_REQUIRES_OK(context, LookupResource(context, HandleFromInput(context, 1), &count));
+    const Tensor& keys = context->input(2);
+
+    Tensor* values = nullptr;
+    OP_REQUIRES_OK(context, context->allocate_output(0, keys.shape(), &values));
+
+    IntegerLookupFunctor<Device, T, CountT>()(
+        context, table->tensor()->flat<T>().data(), count->tensor()->flat<CountT>().data(),
+        keys.flat<T>().data(), values->flat<T>().data(), keys.NumElements(), need_init_, capacity_);
+    need_init_ = false;
+  }
+
+ private:
+  // TODO(deyuf): move init to its own op
+  bool need_init_ = true;
+  int64_t capacity_;
+};
+
 REGISTER_KERNEL_BUILDER(Name("ReadVariableNoCopy").Device(DEVICE_CPU), ReadVariableNoCopyOp);
 REGISTER_KERNEL_BUILDER(Name("ReadVariableNoCopy").Device(DEVICE_DEFAULT).HostMemory("resource"),
                         ReadVariableNoCopyOp);
 REGISTER_KERNEL_BUILDER(Name("ReadVariableNoCopy").Device(DEVICE_GPU).HostMemory("resource"),
                         ReadVariableNoCopyOp);
+
+REGISTER_KERNEL_BUILDER(Name("IntegerLookup")
+                            .Device(DEVICE_GPU)
+                            .TypeConstraint<int64_t>("T")
+                            .TypeConstraint<uint32_t>("count_dtype"),
+                        IntegerLookupOp<Eigen::GpuDevice, int64_t, uint32_t>);
 
 #define REGISTER_GPU(T, Tindices)                                                           \
   REGISTER_KERNEL_BUILDER(Name("RowToSplit")                                                \
