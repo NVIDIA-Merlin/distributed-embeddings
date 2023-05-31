@@ -29,7 +29,7 @@ import horovod.tensorflow.keras as hvd
 from config_v3 import synthetic_models_v3
 from synthetic_models import SyntheticModelTFDE, SyntheticModelNative, InputGenerator
 
-from distributed_embeddings.python.layers import dist_model_parallel as dmp
+from distributed_embeddings import dist_model_parallel as dmp
 
 os.environ['TF_XLA_FLAGS'] = '--tf_xla_auto_jit=fusible'
 

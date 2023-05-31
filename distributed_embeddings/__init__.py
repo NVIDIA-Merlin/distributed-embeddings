@@ -15,4 +15,13 @@
 """Distributed embedding API."""
 
 from distributed_embeddings.python.ops.embedding_lookup_ops import embedding_lookup
+from distributed_embeddings.python.layers.embedding import Embedding
+from distributed_embeddings.python.layers.embedding import IntegerLookup
+from distributed_embeddings.python.layers import dist_model_parallel
+from distributed_embeddings.python.layers.dist_model_parallel import DistEmbeddingStrategy
+from distributed_embeddings.python.layers.dist_model_parallel import DistributedEmbedding
+from distributed_embeddings.python.layers.dist_model_parallel import broadcast_variables
+from distributed_embeddings.python.layers.dist_model_parallel import DistributedGradientTape
+from distributed_embeddings.python.layers.dist_model_parallel import DistributedOptimizer
+from distributed_embeddings.python.layers.dist_model_parallel import BroadcastGlobalVariablesCallback
 from .version import __version__

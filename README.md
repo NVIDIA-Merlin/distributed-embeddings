@@ -9,12 +9,18 @@ Refer to [NVIDIA Developer blog](https://developer.nvidia.com/blog/fast-terabyte
 
 ## Features
 
-### Distributed model parallel wrapper
-`distributed_embeddings.dist_model_parallel` is a tool to enable model parallel training by changing only three lines of your script. It can also be used alongside data parallel to form hybrid parallel training. Users can easily experiment large scale embeddings beyond single GPU's memory capacity without complex code to handle cross-worker communication.
+### Distributed Model Parallel Wrappers
+`dist_model_parallel` contain tools to enable model parallel training by changing only three lines of your script. It can also be used alongside data parallel to form hybrid parallel training. Users can easily experiment large scale embeddings beyond single GPU's memory capacity without complex code to handle cross-worker communication.
+
+To start model parallel, simply wrap a list of keras Embedding layers with `dist_model_parallel.DistributedEmbedding`
 
 ### Embedding Layers
 
 `distributed_embeddings.Embedding` combines functionalities of `tf.keras.layers.Embedding` and `tf.nn.embedding_lookup_sparse` under a unified Keras layer API. The backend is designed to achieve high GPU efficiency.
+
+### IntegerLookup Layers
+
+`distributed_embeddings.IntegerLookup` extends functionalities of `tf.keras.layers.IntegerLookup` by removing requirement of pre-built vocabulary. Instead, vocabulary is built on-the-fly. This new functionality is supported on both CPU and GPU with custom backend.
 
 See more details at [User Guide](https://nvidia-merlin.github.io/distributed-embeddings/userguide.html)
 

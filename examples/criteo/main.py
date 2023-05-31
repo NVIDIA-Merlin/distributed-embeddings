@@ -20,7 +20,7 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 
 import tensorflow as tf
-from distributed_embeddings.python.layers.embedding import IntegerLookup
+from distributed_embeddings import IntegerLookup
 
 
 def create_criteo_dataset():
