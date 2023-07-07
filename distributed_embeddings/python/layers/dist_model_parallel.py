@@ -709,6 +709,12 @@ def broadcast_variables(model_vars, root_rank=0):
       mp_vars.append(var)
     else:
       dp_vars.append(var)
+
+  # modify broadcast to ignore_name_scope by default
+  # TODO(deyuf): make it not positional
+  _broadcast_defaults = list(hvd.broadcast.__defaults__)
+  _broadcast_defaults[1] = True
+  hvd.broadcast.__defaults__ = tuple(_broadcast_defaults)
   hvd.broadcast_variables(dp_vars, root_rank=root_rank)
 
 
