@@ -55,7 +55,9 @@ class EmbeddingListModel(tf.keras.Model):
                dp_input=True,
                input_table_map=None,
                column_slice_threshold=None,
-               test_custom_layer=False):
+               test_custom_layer=False,
+               row_slice_threshold=None,
+               data_parallel_threshold=None):
     super().__init__()
     self.embeddings = []
     for size in table_sizes:
@@ -64,11 +66,14 @@ class EmbeddingListModel(tf.keras.Model):
       else:
         self.embeddings.append(tf.keras.layers.Embedding(*size))
     if distribute:
-      self.dist_embeddings = dmp.DistributedEmbedding(self.embeddings,
-                                                      strategy=strategy,
-                                                      dp_input=dp_input,
-                                                      input_table_map=input_table_map,
-                                                      column_slice_threshold=column_slice_threshold)
+      self.dist_embeddings = dmp.DistributedEmbedding(
+          self.embeddings,
+          strategy=strategy,
+          dp_input=dp_input,
+          input_table_map=input_table_map,
+          column_slice_threshold=column_slice_threshold,
+          row_slice_threshold=row_slice_threshold,
+          data_parallel_threshold=data_parallel_threshold)
     else:
       self.dist_embeddings = None
     self.dense = tf.keras.layers.Dense(5)
@@ -112,7 +117,7 @@ class TestHelperMixedin():
       num_tables = random.randint(1, 2 * self.hvd_size)
     table_sizes = []
     for _ in range(num_tables):
-      table_height = random.randint(3, 20)
+      table_height = random.randint(4, 20)
       table_width = random.randint(4, 15)
       table_sizes.append([table_height, table_width])
     return table_sizes
@@ -222,6 +227,30 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase, TestHelperMixedin):
 
     ref_model = EmbeddingListModel(table_sizes, distribute=False)
     test_model = EmbeddingListModel(table_sizes, distribute=True, strategy='basic')
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+    self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
+
+  def test_row_slice(self):
+    table_sizes = self.gen_table_sizes()
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes,
+                                    distribute=True,
+                                    strategy='basic',
+                                    row_slice_threshold=1)
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+    self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
+
+  def test_data_parallel(self):
+    table_sizes = self.gen_table_sizes()
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes,
+                                    distribute=True,
+                                    strategy='basic',
+                                    data_parallel_threshold=100000)
 
     dp_inputs, _ = self.gen_inputs(table_sizes)
     self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
