@@ -18,11 +18,11 @@ To start model parallel, simply wrap a list of keras Embedding layers with `dist
 
 `distributed_embeddings.Embedding` combines functionalities of `tf.keras.layers.Embedding` and `tf.nn.embedding_lookup_sparse` under a unified Keras layer API. The backend is designed to achieve high GPU efficiency.
 
-### IntegerLookup Layers
+### Input Key Mapping with IntergerLookup Layers
 
-`distributed_embeddings.IntegerLookup` extends functionalities of `tf.keras.layers.IntegerLookup` by removing requirement of pre-built vocabulary. Instead, vocabulary is built on-the-fly. This new functionality is supported on both CPU and GPU with custom backend.
+`distributed_embeddings.IntegerLookup` extends `tf.keras.layers.IntegerLookup`'s functionality with on-the-fly vocabulary building. This allow user to start training directly from input keys without offline preprocessing. A highly optimized GPU backend is along with CPU support.
 
-See more details at [User Guide](https://nvidia-merlin.github.io/distributed-embeddings/userguide.html)
+**See more details at [User Guide](https://nvidia-merlin.github.io/distributed-embeddings/userguide.html)**
 
 ## Installation
 ### Requirements
@@ -32,7 +32,7 @@ You can build inside 22.03 or later NGC TF2 [image](https://catalog.ngc.nvidia.c
 
 Note: horovod v0.27 and TensorFlow 2.10, alternatively NGC 23.03 container, is required for building v0.3+
 ```bash
-docker pull nvcr.io/nvidia/tensorflow:23.03-tf2-py3
+docker pull nvcr.io/nvidia/tensorflow:23.06-tf2-py3
 ```
 ### Build from source
 
