@@ -101,13 +101,15 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Distributed Model Parallel</a></li>
-<li class="toctree-l1"><a class="reference internal" href="#embedding-layers">Embedding Layers</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#examples">Examples:</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Distributed Model Parallel</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#automatic-model-parallel-wrapper">Automatic model parallel wrapper</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#large-table-exceeding-single-gpu-s-memory">Large table exceeding single GPU’s memory</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mix-matching-distribution-strategies">Mix Matching Distribution Strategies</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#shared-embedding">Shared Embedding</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="#larger-than-gpu-memory-table">Larger than GPU memory table</a></li>
-<li class="toctree-l1"><a class="reference internal" href="#shared-embedding">Shared Embedding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="#embedding-layers">Embedding Layers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="#input-hashing">Input Hashing</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Package Reference</span></p>
 <ul>
@@ -187,11 +189,11 @@
             
   <section id="distributed-model-parallel">
 <h1>Distributed Model Parallel<a class="headerlink" href="#distributed-model-parallel" title="Permalink to this heading">¶</a></h1>
-<p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.dist_model_parallel</span></code> is a tool to enable model parallel
+<section id="automatic-model-parallel-wrapper">
+<h2>Automatic model parallel wrapper<a class="headerlink" href="#automatic-model-parallel-wrapper" title="Permalink to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.dist_model_parallel</span></code> enables model parallel
 training by changing only three lines of your script. It can also be
-used alongside data parallel to form hybrid parallel training. Users can
-easily experiment large scale embeddings beyond single GPU’s memory
-capacity without complex code to handle cross-worker communication.
+used alongside data parallel to form hybrid parallel training.
 Example:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">dist_model_parallel</span> <span class="k">as</span> <span class="nn">dmp</span>
 
@@ -229,8 +231,61 @@ broadcast. Take following example directly from Horovod
   <span class="k">return</span> <span class="n">loss_value</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">distributed_embeddings.dist_model_parallel</span></code> can be applied both distributed-embeddings and
-Tensorflow embedding layers.</p>
+<p><code class="docutils literal notranslate"><span class="pre">dist_model_parallel</span></code> can be applied on distributed-embeddings embedding layers,
+keras embedding layers and any user defined custom embedding layer.</p>
+</section>
+<section id="large-table-exceeding-single-gpu-s-memory">
+<h2>Large table exceeding single GPU’s memory<a class="headerlink" href="#large-table-exceeding-single-gpu-s-memory" title="Permalink to this heading">¶</a></h2>
+<p>If single embedding table exceeds GPU memory, or portion of GPU memory considering
+optimizer’s memory requirement, we have to split the embedding table and distribute
+them to multiple GPU.
+Currently distributed-embeddings supports column slicing embedding tables by passing
+<code class="docutils literal notranslate"><span class="pre">column_slice_threshold</span></code> to DistributedEmbedding, Example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Split embedding tables that are larger than 200000 elements (not Bytes)</span>
+<span class="n">embedding_layers</span> <span class="o">=</span> <span class="n">dmp</span><span class="o">.</span><span class="n">DistributedEmbedding</span><span class="p">(</span><span class="n">embedding_layers</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="o">=</span><span class="mi">200000</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Embedding will be evenly split into the smallest power of 2 number of slices so that each
+slice is smaller than <code class="docutils literal notranslate"><span class="pre">column_slice_threshold</span></code>.</p>
+<p>Alternatively, user can specify <code class="docutils literal notranslate"><span class="pre">row_slice_threshold</span></code>, example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Split embedding tables that are larger than 200000 elements (not Bytes)</span>
+<span class="n">embedding_layers</span> <span class="o">=</span> <span class="n">dmp</span><span class="o">.</span><span class="n">DistributedEmbedding</span><span class="p">(</span><span class="n">embedding_layers</span><span class="p">,</span> <span class="n">row_slice_threshold</span><span class="o">=</span><span class="mi">200000</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Different from <code class="docutils literal notranslate"><span class="pre">column_slice_threshold</span></code>, table larger than the threshold will be sliced
+on the first dimension into ‘rows’. Another difference is that table will be sliced evenly
+into the num_worker slices and get distributed among all workers.
+This is useful when user have super tall and narrow table.</p>
+</section>
+<section id="mix-matching-distribution-strategies">
+<h2>Mix Matching Distribution Strategies<a class="headerlink" href="#mix-matching-distribution-strategies" title="Permalink to this heading">¶</a></h2>
+<p>DistributedEmbedding have flexible api options allowing user specify how they want embedding layers to be distributed among GPUs. When multiple options are used, strategies will be applied in following order, balancing ease of use and fine grained control:</p>
+<p><code class="docutils literal notranslate"><span class="pre">data_parallel_threshold</span></code> - Table smaller than the threshold will run in data parallel. This greatly reduces communication in case of small tables with large amount of lookups.</p>
+<p><code class="docutils literal notranslate"><span class="pre">row_slice_threshold</span></code> - Table with more elements than it will be sliced into rows and distributed evenly onto all workers.</p>
+<p><code class="docutils literal notranslate"><span class="pre">column_slice_threshold</span></code> - This is the most flexible option. Tables that aren’t running in dp or row slice will get here and get sliced into columns smaller than column_slice_threshold.</p>
+<p>We currently don’t support partial participation on data parallel and row slice. So tables under those strategies will be distributed onto all workers. For the rest of tables, some may have been column sliced, one of the following strategies will apply to distribute them with model parallel:</p>
+<p><code class="docutils literal notranslate"><span class="pre">basic</span></code> - round-robin distribute table slices in original order</p>
+<p><code class="docutils literal notranslate"><span class="pre">memory_balanced</span></code> - round-robin distribute table slices by size order. This mode balances compute and memory.</p>
+<p><code class="docutils literal notranslate"><span class="pre">memory_optimized</span></code> - distribute table slices to achieve most even memory usage. This mode helps avoid OOM in workloads with skewed tables sizes.</p>
+<p><strong>In summary:</strong></p>
+<ol class="arabic simple">
+<li><p>Small tables run data parallel on all workers</p></li>
+<li><p>Largest tables get evenly row slied onto all workers</p></li>
+<li><p>All other tables run in model parallel, potentially after 2-way to max workers way column slice</p></li>
+</ol>
+</section>
+<section id="shared-embedding">
+<h2>Shared Embedding<a class="headerlink" href="#shared-embedding" title="Permalink to this heading">¶</a></h2>
+<p>It is common that some features share embedding. For example, watched video and browsed video can
+share video embedding. User can supports this case by passing <code class="docutils literal notranslate"><span class="pre">input_table_map</span></code> at intialization
+time, example:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># The first and the last input both map to embedding 0</span>
+<span class="n">embedding_layers</span> <span class="o">=</span> <span class="n">dmp</span><span class="o">.</span><span class="n">DistributedEmbedding</span><span class="p">(</span>
+    <span class="n">embedding_layers</span><span class="p">,</span>
+    <span class="n">input_table_map</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+</pre></div>
+</div>
+</section>
 </section>
 <section id="embedding-layers">
 <h1>Embedding Layers<a class="headerlink" href="#embedding-layers" title="Permalink to this heading">¶</a></h1>
@@ -240,14 +295,12 @@ under a unified Keras layer API. The backend is designed to achieve high
 GPU efficiency. Two kinds of inputs are supported. We call them
 fixed/variable hotness as opposite to confusing dense/sparse term
 various TF API uses. The difference is whether all sample in the batch
-contains same number of indices. Inputs are “<a class="reference external" href="https://www.tensorflow.org/api_docs/python/tf/RaggedTensor#potentially_ragged_tensors_2">potentially ragged
-tensor</a>”.
+contains same number of indices.
 Fixed hotness inputs are regular <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> while variable hotness
-inputs are 2D <code class="docutils literal notranslate"><span class="pre">RaggedTensor</span></code> with inner ragged dimension. Elements of
-inputs are ids to be looked up. Lookup output from inner most dimension
-are considered from same sample and will be reduced if combiner is used.</p>
-<section id="examples">
-<h2>Examples:<a class="headerlink" href="#examples" title="Permalink to this heading">¶</a></h2>
+inputs are 2D <code class="docutils literal notranslate"><span class="pre">RaggedTensor</span></code> or <code class="docutils literal notranslate"><span class="pre">SparseTensor</span></code>. Elements of inputs are
+ids to be looked up. Lookup output from inner most dimension are considered
+from same sample and will be reduced if combiner is used.</p>
+<p>Examples:</p>
 <p><strong>One-hot embedding:</strong></p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">layer</span> <span class="o">=</span> <span class="n">Embedding</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span>
 <span class="gp">&gt;&gt;&gt; </span><span class="n">onehot_input</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">maxval</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
@@ -268,45 +321,38 @@ are considered from same sample and will be reduced if combiner is used.</p>
 </pre></div>
 </div>
 <p><strong>Variable hotness embedding:</strong></p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">variablehot_input</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">ragged</span><span class="o">.</span><span class="n">constant</span><span class="p">([[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">87</span><span class="p">],</span> <span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="p">[</span><span class="mi">6</span><span class="p">],</span> <span class="p">[</span><span class="mi">929</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">variablehot_input</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">vhot_input</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">ragged</span><span class="o">.</span><span class="n">constant</span><span class="p">([[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">87</span><span class="p">],</span> <span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">9</span><span class="p">],</span> <span class="p">[</span><span class="mi">6</span><span class="p">],</span> <span class="p">[</span><span class="mi">929</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">vhot_input</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
 <span class="go">(5, None)</span>
 <span class="gp">&gt;&gt;&gt; </span><span class="n">layer</span> <span class="o">=</span> <span class="n">Embedding</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">variablehot_input</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">vhot_input</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
 <span class="go">(5, None, 64)</span>
 <span class="gp">&gt;&gt;&gt; </span><span class="n">layer</span> <span class="o">=</span> <span class="n">Embedding</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="n">combiner</span><span class="o">=</span><span class="s1">&#39;sum&#39;</span><span class="p">)</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">variablehot_input</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">vhot_input</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
 <span class="go">(5, 64)</span>
 </pre></div>
 </div>
 </section>
-</section>
-<section id="larger-than-gpu-memory-table">
-<h1>Larger than GPU memory table<a class="headerlink" href="#larger-than-gpu-memory-table" title="Permalink to this heading">¶</a></h1>
-<p>If single embedding table exceeds GPU memory, or portion of GPU memory
-depends on the optimizer, we have to split the embedding table and
-distribute them to multiple GPU. Currently distributed-embeddings supports column slicing
-embedding tables by passing <code class="docutils literal notranslate"><span class="pre">column_slice_threshold</span></code> to
-DistributedEmbedding, example:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Split embedding tables that are larger than 20000000 elements (not Bytes)</span>
-<span class="n">embedding_layers</span> <span class="o">=</span> <span class="n">dmp</span><span class="o">.</span><span class="n">DistributedEmbedding</span><span class="p">(</span><span class="n">embedding_layers</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="o">=</span><span class="mi">20000000</span><span class="p">)</span>
+<section id="input-hashing">
+<h1>Input Hashing<a class="headerlink" href="#input-hashing" title="Permalink to this heading">¶</a></h1>
+<p>A preprocessing layer that maps integer features to contiguous ranges. This layer extends <code class="docutils literal notranslate"><span class="pre">tf.keras.layers.IntegerLookup</span></code> with following functionalities:</p>
+<ol class="arabic simple">
+<li><p>Generates vocabulary on the fly so that training can start with empty vocabulary</p></li>
+<li><p>Suport both CPU and GPU with efficient backends</p></li>
+<li><p>Frequency of input keys are counted when GPU backend is used</p></li>
+<li><p>Overflow protection. When lookup table grows beyond user-defined limit, new keys will be treat as OOV tokens and get mapped to 0.</p></li>
+</ol>
+<p>With this, user can start or continugous train on new data, without offline data preprocessing.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">lookup_layer</span> <span class="o">=</span> <span class="n">IntegerLookup</span><span class="p">(</span><span class="n">max_vocab_size</span><span class="p">)</span>
+<span class="n">embedding_layer</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">max_vocab_size</span><span class="p">,</span> <span class="n">embedding_width</span><span class="p">)</span>
+<span class="o">...</span>
+<span class="c1"># inside call() function</span>
+<span class="n">input_ids</span> <span class="o">=</span> <span class="n">lookup_layer</span><span class="p">(</span><span class="n">input_hash_keys</span><span class="p">)</span>
+<span class="n">embeddings</span> <span class="o">=</span> <span class="n">embedding_layer</span><span class="p">(</span><span class="n">input_ids</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Embedding will be evenly split into the smallest power of 2 number of
-slices so that each slice is smaller than <code class="docutils literal notranslate"><span class="pre">column_slice_threshold</span></code>.</p>
-</section>
-<section id="shared-embedding">
-<h1>Shared Embedding<a class="headerlink" href="#shared-embedding" title="Permalink to this heading">¶</a></h1>
-<p>It is common that some features share embedding. For example, watched
-video and browsed video can share video embedding. distributed-embeddings supports shared
-embedding by passing a <code class="docutils literal notranslate"><span class="pre">input_table_map</span></code> to DistributedEmbedding,
-example:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># The first and the last input both map to embedding 0</span>
-<span class="n">embedding_layers</span> <span class="o">=</span> <span class="n">dmp</span><span class="o">.</span><span class="n">DistributedEmbedding</span><span class="p">(</span>
-    <span class="n">embedding_layers</span><span class="p">,</span>
-    <span class="n">input_table_map</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
-</pre></div>
-</div>
+<p>For more details, see our Criteo <a class="reference external" href="https://github.com/NVIDIA-Merlin/distributed-embeddings/blob/main/examples/criteo/main.py">Example</a>
+and read TensorFlow <a class="reference external" href="https://www.tensorflow.org/guide/migrate/migrating_feature_columns">Preprocessing Layer Document</a></p>
 </section>
 
 
@@ -331,7 +377,7 @@ example:</p>
 
   <div role="contentinfo">
     <p>
-        &copy; Copyright 2022, NVIDIA.
+        &copy; Copyright 2023, NVIDIA.
 
     </p>
   </div>

@@ -102,8 +102,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="userguide.html">Distributed Model Parallel</a></li>
 <li class="toctree-l1"><a class="reference internal" href="userguide.html#embedding-layers">Embedding Layers</a></li>
-<li class="toctree-l1"><a class="reference internal" href="userguide.html#larger-than-gpu-memory-table">Larger than GPU memory table</a></li>
-<li class="toctree-l1"><a class="reference internal" href="userguide.html#shared-embedding">Shared Embedding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="userguide.html#input-hashing">Input Hashing</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Package Reference</span></p>
 <ul class="current">
@@ -213,7 +212,7 @@ so each worker receive at least one slice.
 If not None, embedding tables with more elements than column_slice_threshold will be divide
 into N even pieces alone embedded width dimension.
 N is smallest power of 2 makes each slice smaller than column_slice_threshold. Default None.</p></li>
-<li><p><strong>row_slice</strong> (<em>TBD</em>) – Describe how which embedding needs to be row sliced</p></li>
+<li><p><strong>row_slice_threshold</strong> – Embedding larger than this will be evenly row sliced onto all workers</p></li>
 <li><p><strong>dp_input</strong> (<em>bool</em>) – If True, takes data parallel input, i.e. in shape
 [local_batch_size x global_num_embeddings]. Otherwise take model parall input in shape
 [global_batch_size x local_num_embeddings]. Default True.</p></li>
@@ -300,7 +299,7 @@ this will be round to number of rows base on weight shape.</p></li>
 
   <div role="contentinfo">
     <p>
-        &copy; Copyright 2022, NVIDIA.
+        &copy; Copyright 2023, NVIDIA.
 
     </p>
   </div>

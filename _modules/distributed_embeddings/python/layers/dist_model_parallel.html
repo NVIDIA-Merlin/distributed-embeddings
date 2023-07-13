@@ -101,8 +101,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../userguide.html">Distributed Model Parallel</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../userguide.html#embedding-layers">Embedding Layers</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../userguide.html#larger-than-gpu-memory-table">Larger than GPU memory table</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../userguide.html#shared-embedding">Shared Embedding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../userguide.html#input-hashing">Input Hashing</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Package Reference</span></p>
 <ul>
@@ -228,6 +227,16 @@
   <span class="k">return</span> <span class="n">tf</span><span class="o">.</span><span class="n">shape</span><span class="p">(</span><span class="n">tensor</span><span class="p">)</span>
 
 
+<span class="nd">@tf</span><span class="o">.</span><span class="n">custom_gradient</span>
+<span class="k">def</span> <span class="nf">grouped_reducescatter_unscaled</span><span class="p">(</span><span class="n">inputs</span><span class="p">):</span>
+  <span class="n">outputs</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">grouped_reducescatter</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">hvd</span><span class="o">.</span><span class="n">Sum</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="nf">grad</span><span class="p">(</span><span class="o">*</span><span class="n">upstream</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">hvd</span><span class="o">.</span><span class="n">grouped_allgather</span><span class="p">(</span><span class="n">upstream</span><span class="p">)</span>
+
+  <span class="k">return</span> <span class="n">outputs</span><span class="p">,</span> <span class="n">grad</span>
+
+
 <span class="k">class</span> <span class="nc">DistEmbeddingStrategy</span><span class="p">():</span>
 <span class="w">  </span><span class="sd">&quot;&quot;&quot;Distributed embedding strategy</span>
 
@@ -242,7 +251,15 @@
 <span class="sd">  Attributes:</span>
 <span class="sd">    strategy: string indicates how embedding tables are distributed.</span>
 <span class="sd">    column_slice_threshold: desired upper bound of elements count in each slice.</span>
+<span class="sd">    column_slice_threshold: desired lower bound where table larger than this will be row sliced.</span>
 <span class="sd">    sliced_out_ranges: list of [output_pos, num_slices] for each input, used to merged outputs.</span>
+<span class="sd">    table_groups: lists of table ids. group 0 runs dp, group 1 do column slice with table parallel,</span>
+<span class="sd">                  group 2 runs row_slice onto all workers.</span>
+<span class="sd">    input_groups: input ids coresponding to table grouping.</span>
+<span class="sd">    map_groups: input to table map within each group.</span>
+<span class="sd">    rev_group_ids: list used to reorder grouped output back into flat input order.</span>
+<span class="sd">    row_sliced_configs: configs that&#39;s been row sliced.</span>
+<span class="sd">    row_inputs_offsets: add to row slice input so inputs except certain range will go OOB.</span>
 <span class="sd">    input_ids_list: nested list, contain input index list in rank order. use for dp_input == False.</span>
 <span class="sd">    local_maps: nested list, contain per rank local input to table map.</span>
 <span class="sd">    local_configs: nested list, contain per rank lists of local table configs.</span>
@@ -251,7 +268,7 @@
 <span class="sd">    local_group_list: nested list, contain per rank concat grouping info for get/set_weights.</span>
 <span class="sd">    table_ids: nested list, contain per rank table ids for get/set_weights.</span>
 <span class="sd">    widths_list_flat: list of all output width, before merging slices and in worker order</span>
-<span class="sd">    rev_global_input_ids: list to shuffle output in worker order into same input order.</span>
+<span class="sd">    rev_tp_ids: list used to reorder table parallel output back into flat tp input order.</span>
 <span class="sd">  &quot;&quot;&quot;</span>
 
   <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
@@ -259,11 +276,15 @@
                <span class="n">world_size</span><span class="p">,</span>
                <span class="n">strategy</span><span class="o">=</span><span class="s2">&quot;basic&quot;</span><span class="p">,</span>
                <span class="n">input_table_map</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-               <span class="n">column_slice_threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+               <span class="n">column_slice_threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">row_slice_threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">data_parallel_threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="c1"># code in DMP to skip hvd call in single process case may assume &quot;basic&quot;</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">=</span> <span class="s2">&quot;basic&quot;</span> <span class="k">if</span> <span class="n">world_size</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">strategy</span>
     <span class="c1"># column_slice can be used to enable more table concat, so keep it in single process</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">column_slice_threshold</span> <span class="o">=</span> <span class="n">column_slice_threshold</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">row_slice_threshold</span> <span class="o">=</span> <span class="n">row_slice_threshold</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">data_parallel_threshold</span> <span class="o">=</span> <span class="n">data_parallel_threshold</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">global_configs</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">get_config</span><span class="p">()</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">embeddings</span><span class="p">]</span>
     <span class="c1"># Insert layer type information to config dicts</span>
     <span class="k">for</span> <span class="n">config</span><span class="p">,</span> <span class="n">embedding</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">global_configs</span><span class="p">,</span> <span class="n">embeddings</span><span class="p">):</span>
@@ -271,9 +292,27 @@
     <span class="k">if</span> <span class="n">input_table_map</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
       <span class="n">input_table_map</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">embeddings</span><span class="p">)))</span>
 
+    <span class="c1"># separated table ids into groups for different strat</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">table_groups</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">init_table_groups</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">global_configs</span><span class="p">)</span>
+    <span class="c1"># input ids and map. rev_group_ids here to reverse grouped call back to input order</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">input_groups</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">map_groups</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">rev_group_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">init_input_and_map_groups</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">table_groups</span><span class="p">,</span> <span class="n">input_table_map</span><span class="p">)</span>
+
+    <span class="c1"># 1. handle data parallel</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">dp_configs</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">global_configs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">table_groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+
+    <span class="c1"># 2. handle row slicing</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">table_groups</span><span class="p">[</span><span class="mi">2</span><span class="p">]:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">row_sliced_configs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">row_inputs_offsets</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">create_row_sliced_configs</span><span class="p">(</span>
+          <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">global_configs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">table_groups</span><span class="p">[</span><span class="mi">2</span><span class="p">]],</span> <span class="n">world_size</span><span class="p">)</span>
+
+    <span class="c1"># 3. handle column slicing and table parallel</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">table_groups</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+      <span class="k">return</span>
     <span class="c1"># Create (maybe) sliced configs</span>
-    <span class="n">sliced_configs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sliced_out_ranges</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">create_sliced_configs</span><span class="p">(</span>
-        <span class="n">world_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">column_slice_threshold</span><span class="p">,</span> <span class="n">input_table_map</span><span class="p">)</span>
+    <span class="n">sliced_configs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sliced_out_ranges</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">create_col_sliced_configs</span><span class="p">(</span>
+        <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">global_configs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">table_groups</span><span class="p">[</span><span class="mi">1</span><span class="p">]],</span> <span class="n">world_size</span><span class="p">,</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">column_slice_threshold</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">map_groups</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
 
     <span class="c1"># Apply strategy and save nested list containing table indices by rank</span>
     <span class="n">table_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_stragety</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">sliced_configs</span><span class="p">)</span>
@@ -296,7 +335,7 @@
       <span class="c1"># calculate local input ids and map from this rank&#39;s table_ids and global input map</span>
       <span class="n">rank_input_ids</span><span class="p">,</span> <span class="n">rank_input_map</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
       <span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">table_idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">rank_table_ids</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">mapped_idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">input_table_map</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">mapped_idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">map_groups</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
           <span class="k">if</span> <span class="n">table_idx</span> <span class="o">==</span> <span class="n">mapped_idx</span><span class="p">:</span>
             <span class="n">rank_input_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
             <span class="n">rank_input_map</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
@@ -314,17 +353,57 @@
       <span class="bp">self</span><span class="o">.</span><span class="n">local_weight_offsets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">weight_offsets</span><span class="p">)</span>
 
     <span class="c1"># create a flatten list contain table widths, in worker order, used for slice after alltoall</span>
-    <span class="c1"># TODO(deyuf): might switch to not use this to support non-2D output</span>
+    <span class="c1"># This is fast but might switch to not use this to support non-2D output(no local combiner)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">widths_list_flat</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">config</span><span class="p">,</span> <span class="n">input_map</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">local_configs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">local_maps</span><span class="p">):</span>
       <span class="bp">self</span><span class="o">.</span><span class="n">widths_list_flat</span> <span class="o">+=</span> <span class="p">[</span><span class="n">config</span><span class="p">[</span><span class="n">m</span><span class="p">][</span><span class="s1">&#39;output_dim&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">input_map</span><span class="p">]</span>
 
     <span class="c1"># List of indices to shuffle worker ordered embedding outputs back to original order</span>
     <span class="n">worker_order_input_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span> <span class="k">for</span> <span class="n">sublist</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_ids_list</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">sublist</span><span class="p">]</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">rev_global_input_ids</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">rev_tp_ids</span> <span class="o">=</span> <span class="p">[</span>
         <span class="n">index</span>
         <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">index</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">worker_order_input_ids</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">worker_order_input_ids</span><span class="p">))))</span>
     <span class="p">]</span>
+
+  <span class="c1"># below are the methods to divide table into groups and adjust input and input map accordingly</span>
+  <span class="k">def</span> <span class="nf">init_table_groups</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">configs</span><span class="p">):</span>
+    <span class="c1"># We want to support data parallel, table parallel, column slice and row slice</span>
+    <span class="c1"># Couple assumptions:</span>
+    <span class="c1"># - strat applied by size in above order, meaning small table run dp -&gt; large table run row slice</span>
+    <span class="c1"># - currently only apply one of above to any table. it may make sense to mix row/col slice in future</span>
+    <span class="c1"># - because communication pattern is different, we run 3 separate groups calls</span>
+    <span class="c1"># - non-symmetric table parallel is only applied to column sliced group</span>
+    <span class="n">num_elems</span> <span class="o">=</span> <span class="p">[</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;input_dim&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;output_dim&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="n">configs</span><span class="p">]</span>
+    <span class="n">dp</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">row</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">num_elem</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">num_elems</span><span class="p">):</span>
+      <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_parallel_threshold</span> <span class="ow">and</span> <span class="n">num_elem</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_parallel_threshold</span><span class="p">:</span>
+        <span class="n">dp</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+      <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">row_slice_threshold</span> <span class="ow">and</span> <span class="n">num_elem</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">row_slice_threshold</span><span class="p">:</span>
+        <span class="n">row</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">col</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">dp</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">row</span><span class="p">]</span>
+
+  <span class="k">def</span> <span class="nf">init_input_and_map_groups</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_groups</span><span class="p">,</span> <span class="n">input_table_map</span><span class="p">):</span>
+    <span class="n">dp</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">row</span> <span class="o">=</span> <span class="n">table_groups</span>
+    <span class="c1"># pick out inputs for each group</span>
+    <span class="n">dp_in</span><span class="p">,</span> <span class="n">col_in</span><span class="p">,</span> <span class="n">row_in</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="n">dp_map</span><span class="p">,</span> <span class="n">col_map</span><span class="p">,</span> <span class="n">row_map</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">input_table_map</span><span class="p">):</span>
+      <span class="k">if</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">dp</span><span class="p">:</span>
+        <span class="n">dp_in</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+        <span class="n">dp_map</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">dp</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">idx</span><span class="p">))</span>
+      <span class="k">elif</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">col</span><span class="p">:</span>
+        <span class="n">col_in</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+        <span class="n">col_map</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">col</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">idx</span><span class="p">))</span>
+      <span class="k">elif</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">row</span><span class="p">:</span>
+        <span class="n">row_in</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+        <span class="n">row_map</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">idx</span><span class="p">))</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Wrong input initializing input/map groups.&quot;</span><span class="p">)</span>
+    <span class="n">flat_input_ids</span> <span class="o">=</span> <span class="n">dp_in</span> <span class="o">+</span> <span class="n">col_in</span> <span class="o">+</span> <span class="n">row_in</span>
+    <span class="n">reverse_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">index</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">index</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">flat_input_ids</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">flat_input_ids</span><span class="p">))))]</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">dp_in</span><span class="p">,</span> <span class="n">col_in</span><span class="p">,</span> <span class="n">row_in</span><span class="p">],</span> <span class="p">[</span><span class="n">dp_map</span><span class="p">,</span> <span class="n">col_map</span><span class="p">,</span> <span class="n">row_map</span><span class="p">],</span> <span class="n">reverse_ids</span>
 
   <span class="k">def</span> <span class="nf">maybe_slice_table_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">orig_config</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="p">,</span> <span class="n">world_size</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Column slice a embedding config if size exceed column_slice_threshold.</span>
@@ -359,10 +438,12 @@
       <span class="n">sliced_config</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">sliced_config</span>
 
-  <span class="k">def</span> <span class="nf">create_sliced_configs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="p">,</span> <span class="n">input_table_map</span><span class="p">):</span>
+  <span class="k">def</span> <span class="nf">create_col_sliced_configs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">global_col_configs</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="p">,</span>
+                                <span class="n">input_table_map</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Create column sliced configs from global configs.</span>
 <span class="sd">    This function also calculate ranges of data parallel output needs concat due to this slice.</span>
 <span class="sd">    Args:</span>
+<span class="sd">      global_col_configs (list): selected configs for doing column slice</span>
 <span class="sd">      world_size (int): number of model parallel workers</span>
 <span class="sd">      column_slice_threshold (int or None): desired upper bound of elements count in each slice</span>
 <span class="sd">      input_table_map (list): A list of table ids mapping each input to a table</span>
@@ -372,10 +453,9 @@
 <span class="sd">      sliced_out_ranges (list): each element is list of 2 integers, representing output ranges need</span>
 <span class="sd">    to be concatenated to re-form output due to above slice.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># TODO(Deyu): in auto slice and when there are equal sized tables, allow slice some of them</span>
     <span class="c1"># less table than worker, we try our best to slice into worker count slices(may go over)</span>
     <span class="k">if</span> <span class="n">column_slice_threshold</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-      <span class="n">table_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;input_dim&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;output_dim&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_configs</span><span class="p">]</span>
+      <span class="n">table_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;input_dim&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;output_dim&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="n">global_col_configs</span><span class="p">]</span>
       <span class="k">while</span> <span class="n">world_size</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">table_sizes</span><span class="p">):</span>
         <span class="n">table_sizes</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
         <span class="n">column_slice_threshold</span> <span class="o">=</span> <span class="n">table_sizes</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
@@ -383,8 +463,8 @@
         <span class="n">table_sizes</span> <span class="o">+=</span> <span class="p">[</span><span class="n">cur_max_size</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">cur_max_size</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span>
 
     <span class="n">sliced_configs</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">global_config</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_configs</span><span class="p">:</span>
-      <span class="n">maybe_sliced_config</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">maybe_slice_table_column</span><span class="p">(</span><span class="n">global_config</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="p">,</span>
+    <span class="k">for</span> <span class="n">col_config</span> <span class="ow">in</span> <span class="n">global_col_configs</span><span class="p">:</span>
+      <span class="n">maybe_sliced_config</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">maybe_slice_table_column</span><span class="p">(</span><span class="n">col_config</span><span class="p">,</span> <span class="n">column_slice_threshold</span><span class="p">,</span>
                                                           <span class="n">world_size</span><span class="p">)</span>
       <span class="n">sliced_configs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">maybe_sliced_config</span><span class="p">)</span>
     <span class="c1"># figure out ranges of output that needs concat</span>
@@ -394,6 +474,29 @@
       <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sliced_configs</span><span class="p">[</span><span class="n">table_id</span><span class="p">])</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
         <span class="n">sliced_out_ranges</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">input_id</span><span class="p">,</span> <span class="n">input_id</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">sliced_configs</span><span class="p">[</span><span class="n">table_id</span><span class="p">])])</span>
     <span class="k">return</span> <span class="n">sliced_configs</span><span class="p">,</span> <span class="n">sliced_out_ranges</span>
+
+  <span class="k">def</span> <span class="nf">create_row_sliced_configs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">global_row_configs</span><span class="p">,</span> <span class="n">world_size</span><span class="p">):</span>
+    <span class="c1"># initial test code. not considering corner cases</span>
+    <span class="n">sliced_configs</span><span class="p">,</span> <span class="n">offsets</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">orig_config</span> <span class="ow">in</span> <span class="n">global_row_configs</span><span class="p">:</span>
+      <span class="n">sliced_config</span><span class="p">,</span> <span class="n">offset</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+      <span class="n">cur_offset</span> <span class="o">=</span> <span class="mi">0</span>
+      <span class="n">row_per_slice</span> <span class="o">=</span> <span class="n">orig_config</span><span class="p">[</span><span class="s1">&#39;input_dim&#39;</span><span class="p">]</span> <span class="o">//</span> <span class="n">world_size</span>
+      <span class="n">remainder</span> <span class="o">=</span> <span class="n">orig_config</span><span class="p">[</span><span class="s1">&#39;input_dim&#39;</span><span class="p">]</span> <span class="o">%</span> <span class="n">world_size</span>
+      <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">world_size</span><span class="p">):</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">orig_config</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">config</span><span class="p">[</span><span class="s1">&#39;input_dim&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">row_per_slice</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">remainder</span><span class="p">:</span>
+          <span class="n">config</span><span class="p">[</span><span class="s1">&#39;input_dim&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">sliced_config</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="n">offset</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cur_offset</span><span class="p">)</span>
+        <span class="n">cur_offset</span> <span class="o">-=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;input_dim&#39;</span><span class="p">]</span>
+      <span class="n">sliced_configs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sliced_config</span><span class="p">)</span>
+      <span class="n">offsets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">offset</span><span class="p">)</span>
+    <span class="c1"># re-divide lists by rank</span>
+    <span class="n">sliced_configs</span> <span class="o">=</span> <span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="n">rank_configs</span><span class="p">)</span> <span class="k">for</span> <span class="n">rank_configs</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="o">*</span><span class="n">sliced_configs</span><span class="p">)]</span>
+    <span class="n">offsets</span> <span class="o">=</span> <span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="n">rank_offsets</span><span class="p">)</span> <span class="k">for</span> <span class="n">rank_offsets</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="o">*</span><span class="n">offsets</span><span class="p">)]</span>
+    <span class="k">return</span> <span class="n">sliced_configs</span><span class="p">,</span> <span class="n">offsets</span>
 
   <span class="c1"># pylint: disable=missing-param-doc,missing-type-doc,missing-raises-doc</span>
   <span class="k">def</span> <span class="nf">apply_stragety</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">sliced_configs</span><span class="p">):</span>
@@ -434,9 +537,7 @@
       <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">F</span><span class="s2">&quot;Unsupported strategy </span><span class="si">{</span><span class="n">strategy</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">divided_ids</span>
 
-  <span class="c1"># First attempt here, converting into shared embedding and let TF/XLA does the job.</span>
-  <span class="c1"># TODO(deyuf): add shortcut for all to 1 concat. explicitly shape things to save slice/concat</span>
-  <span class="c1"># i.e. reshape to [num_worker, num_inp, local_batch] and offset in [1, num_inp, 1]</span>
+  <span class="c1"># Concat table so different table now become shared embedding. XLA does rest of optimization.</span>
   <span class="k">def</span> <span class="nf">_create_concat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_configs</span><span class="p">,</span> <span class="n">input_maps</span><span class="p">):</span>
     <span class="c1"># first get local table id into groups</span>
     <span class="n">grouped_table_ids</span><span class="p">,</span> <span class="n">concat_configs</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
@@ -468,7 +569,7 @@
     <span class="k">for</span> <span class="n">concat_config</span> <span class="ow">in</span> <span class="n">concat_configs</span><span class="p">:</span>
       <span class="n">input_dims</span> <span class="o">=</span> <span class="n">concat_config</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;input_dims&#39;</span><span class="p">)</span>
       <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">input_dims</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="c1"># TODO(deyuf): custom layer without initializer will be concat but init is not wrapped</span>
+        <span class="c1"># TODO(deyuf): we don&#39;t really need serialize and can just get from original class</span>
         <span class="k">if</span> <span class="s1">&#39;embeddings_initializer&#39;</span> <span class="ow">in</span> <span class="n">concat_config</span><span class="p">:</span>
           <span class="n">orig_initializer</span> <span class="o">=</span> <span class="n">initializers</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">concat_config</span><span class="p">[</span><span class="s1">&#39;embeddings_initializer&#39;</span><span class="p">])</span>
           <span class="n">concat_config</span><span class="p">[</span><span class="s1">&#39;embeddings_initializer&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ConcatInitializer</span><span class="p">(</span><span class="n">orig_initializer</span><span class="p">,</span> <span class="n">input_dims</span><span class="p">)</span>
@@ -512,7 +613,7 @@
 <span class="sd">        If not None, embedding tables with more elements than column_slice_threshold will be divide</span>
 <span class="sd">        into N even pieces alone embedded width dimension.</span>
 <span class="sd">        N is smallest power of 2 makes each slice smaller than column_slice_threshold. Default None.</span>
-<span class="sd">    row_slice (TBD): Describe how which embedding needs to be row sliced</span>
+<span class="sd">    row_slice_threshold: Embedding larger than this will be evenly row sliced onto all workers</span>
 <span class="sd">    dp_input (bool): If True, takes data parallel input, i.e. in shape</span>
 <span class="sd">        [local_batch_size x global_num_embeddings]. Otherwise take model parall input in shape</span>
 <span class="sd">        [global_batch_size x local_num_embeddings]. Default True.</span>
@@ -525,16 +626,15 @@
                <span class="n">embeddings</span><span class="p">,</span>
                <span class="n">strategy</span><span class="o">=</span><span class="s2">&quot;basic&quot;</span><span class="p">,</span>
                <span class="n">column_slice_threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-               <span class="n">row_slice</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">row_slice_threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                <span class="n">dp_input</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                <span class="n">input_table_map</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">data_parallel_threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 
     <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">strategy</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;basic&#39;</span><span class="p">,</span> <span class="s1">&#39;memory_balanced&#39;</span><span class="p">,</span> <span class="s1">&#39;memory_optimized&#39;</span><span class="p">]:</span>
       <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">F</span><span class="s2">&quot;Unsupported shard strategy </span><span class="si">{</span><span class="n">strategy</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">row_slice</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-      <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Row slicing embedding is not supported yet!&quot;</span><span class="p">)</span>
 
     <span class="c1"># Currently assume data parallel ranks == model parallel ranks</span>
     <span class="c1"># TODO(deyuf): add more control over this with newly added hvd process_set api</span>
@@ -543,34 +643,72 @@
     <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">size</span><span class="p">()</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">rank</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">rank</span><span class="p">()</span>
 
+    <span class="c1"># single worker case fallback to no dp and no row slice.</span>
+    <span class="c1"># ideally we could fallback to dp, but do mp for mp_input backward compatibilty</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">dp_input</span> <span class="o">=</span> <span class="n">dp_input</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">column_slice_threshold</span> <span class="o">=</span> <span class="n">column_slice_threshold</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">row_slice_threshold</span> <span class="o">=</span> <span class="n">row_slice_threshold</span> <span class="k">if</span> <span class="n">dp_input</span> <span class="k">else</span> <span class="kc">None</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">data_parallel_threshold</span> <span class="o">=</span> <span class="n">data_parallel_threshold</span> <span class="k">if</span> <span class="n">dp_input</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">row_slice_threshold</span> <span class="o">=</span> <span class="kc">None</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">data_parallel_threshold</span> <span class="o">=</span> <span class="kc">None</span>
+
     <span class="c1"># get model parallel distribution strategy</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span> <span class="o">=</span> <span class="n">DistEmbeddingStrategy</span><span class="p">(</span><span class="n">embeddings</span><span class="p">,</span>
                                           <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span><span class="p">,</span>
                                           <span class="n">strategy</span><span class="p">,</span>
                                           <span class="n">input_table_map</span><span class="o">=</span><span class="n">input_table_map</span><span class="p">,</span>
-                                          <span class="n">column_slice_threshold</span><span class="o">=</span><span class="n">column_slice_threshold</span><span class="p">)</span>
-    <span class="c1"># Handle explicit threshold or corner cases, in which worker may receive no configs</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="n">rank_configs</span> <span class="k">for</span> <span class="n">rank_configs</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">local_configs</span><span class="p">):</span>
-      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Not enough table after slicing to run on all worker.&quot;</span>
-                       <span class="s2">&quot;Try decrease column_slice_threshold or decrease worker count&quot;</span><span class="p">)</span>
+                                          <span class="n">column_slice_threshold</span><span class="o">=</span><span class="n">column_slice_threshold</span><span class="p">,</span>
+                                          <span class="n">row_slice_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">row_slice_threshold</span><span class="p">,</span>
+                                          <span class="n">data_parallel_threshold</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">data_parallel_threshold</span><span class="p">)</span>
 
-    <span class="c1"># create local embeddings</span>
+    <span class="c1"># Here we make sure empty lists exist</span>
+    <span class="c1"># create data parallel layers</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">dp_layers</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+      <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">dp_configs</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dp_layers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_create_layer_from_config</span><span class="p">(</span><span class="n">config</span><span class="p">))</span>
+
+    <span class="c1"># create (maybe) column sliced embeddings and table parallel.</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">local_embedding_layers</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">local_configs</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]:</span>
-      <span class="n">layer_type</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;layer_type&#39;</span><span class="p">)</span>
-      <span class="c1"># For stock keras Embedding, we switch underlying layer for better performance</span>
-      <span class="c1"># If inputs are custom layers, original layer will be used</span>
-      <span class="c1"># TODO(deyuf): Check functionality coverage, add fallback or type picking api</span>
-      <span class="n">layer_type</span> <span class="o">=</span> <span class="n">Embedding</span> <span class="k">if</span> <span class="n">layer_type</span> <span class="o">==</span> <span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Embedding</span> <span class="k">else</span> <span class="n">layer_type</span>
-      <span class="bp">self</span><span class="o">.</span><span class="n">local_embedding_layers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">layer_type</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="n">config</span><span class="p">))</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">offsets</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="kc">None</span> <span class="k">if</span> <span class="n">offset</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">tf</span><span class="o">.</span><span class="n">constant</span><span class="p">([</span><span class="n">offset</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">offset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">local_input_offsets</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]</span>
-    <span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">col_inputs_offsets</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_groups</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+      <span class="c1"># Handle explicit threshold or corner cases, in which worker may receive no configs</span>
+      <span class="c1"># Column slice still need to expand all gpu, otherwise alltoall fails</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="n">rank_configs</span> <span class="k">for</span> <span class="n">rank_configs</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">local_configs</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Not enough table after slicing to run on all worker.&quot;</span>
+                         <span class="s2">&quot;Try decrease column_slice_threshold or decrease worker count&quot;</span><span class="p">)</span>
+      <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">local_configs</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">local_embedding_layers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_create_layer_from_config</span><span class="p">(</span><span class="n">config</span><span class="p">))</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">col_inputs_offsets</span> <span class="o">=</span> <span class="p">[</span>
+          <span class="kc">None</span> <span class="k">if</span> <span class="n">offset</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">tf</span><span class="o">.</span><span class="n">constant</span><span class="p">([</span><span class="n">offset</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+          <span class="k">for</span> <span class="n">offset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">local_input_offsets</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]</span>
+      <span class="p">]</span>
 
-  <span class="k">def</span> <span class="nf">_call_base</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-param-doc,missing-type-doc</span>
+    <span class="c1"># create row sliced embeddings.</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">row_layers</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">row_inputs_offsets</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_groups</span><span class="p">[</span><span class="mi">2</span><span class="p">]:</span>
+      <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">row_sliced_configs</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">row_layers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_create_layer_from_config</span><span class="p">(</span><span class="n">config</span><span class="p">))</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">row_inputs_offsets</span> <span class="o">=</span> <span class="p">[</span>
+          <span class="kc">None</span> <span class="k">if</span> <span class="n">offset</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">tf</span><span class="o">.</span><span class="n">constant</span><span class="p">([</span><span class="n">offset</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+          <span class="k">for</span> <span class="n">offset</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">row_inputs_offsets</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]</span>
+      <span class="p">]</span>
+
+  <span class="k">def</span> <span class="nf">_create_layer_from_config</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+    <span class="c1"># For stock keras Embedding, we switch underlying layer for better performance</span>
+    <span class="c1"># If inputs are custom layers, original layer will be used</span>
+    <span class="n">layer_type</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s1">&#39;layer_type&#39;</span><span class="p">)</span>
+    <span class="n">layer_type</span> <span class="o">=</span> <span class="n">Embedding</span> <span class="k">if</span> <span class="n">layer_type</span> <span class="o">==</span> <span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">layers</span><span class="o">.</span><span class="n">Embedding</span> <span class="k">else</span> <span class="n">layer_type</span>
+    <span class="k">return</span> <span class="n">layer_type</span><span class="o">.</span><span class="n">from_config</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="nf">_call_data_parallel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>
+    <span class="n">outputs</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">dp_layers</span><span class="p">[</span><span class="n">m</span><span class="p">](</span><span class="n">inp</span><span class="p">)</span> <span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">inp</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">map_groups</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">inputs</span><span class="p">)]</span>
+    <span class="k">return</span> <span class="n">outputs</span>
+
+  <span class="k">def</span> <span class="nf">_call_table_parallel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-param-doc,missing-type-doc</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Call function that do embeddings and communication</span>
 
 <span class="sd">    Currently, it requires same batch_size on all workers.</span>
@@ -596,7 +734,7 @@
         <span class="n">inputs</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">world_size</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">])</span>
         <span class="n">inputs</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">local_splits</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">],</span> <span class="mi">1</span><span class="p">)</span>
         <span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">([[</span><span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">*</span> <span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]],</span> <span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:]],</span> <span class="mi">0</span><span class="p">))</span>
+            <span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">*</span> <span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">+</span> <span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
             <span class="k">for</span> <span class="n">inp</span><span class="p">,</span> <span class="n">shape</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">local_shapes</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">])</span>
         <span class="p">]</span>
       <span class="k">else</span><span class="p">:</span>
@@ -609,7 +747,7 @@
     <span class="c1"># offset inputs</span>
     <span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span>
         <span class="n">inp</span> <span class="k">if</span> <span class="n">offset</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">tf</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span> <span class="o">+</span> <span class="n">offset</span>
-        <span class="k">for</span> <span class="n">inp</span><span class="p">,</span> <span class="n">offset</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">inp</span><span class="p">,</span> <span class="n">offset</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">col_inputs_offsets</span><span class="p">)</span>
     <span class="p">]</span>
     <span class="c1"># do embedding</span>
     <span class="n">mp_outs</span> <span class="o">=</span> <span class="p">[</span>
@@ -631,39 +769,43 @@
       <span class="n">mp_outs</span> <span class="o">=</span> <span class="p">[</span><span class="n">tf</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">split_out</span><span class="p">,</span> <span class="p">[</span><span class="n">local_bs</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">split_out</span> <span class="ow">in</span> <span class="n">split_outs</span><span class="p">]</span>
 
     <span class="c1"># reorder outputs to be same as inputs order</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="p">[</span><span class="n">mp_outs</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">rev_global_input_ids</span><span class="p">]</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="p">[</span><span class="n">mp_outs</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">rev_tp_ids</span><span class="p">]</span>
+
+    <span class="c1"># Concat sliced outputs result from column slicing back together</span>
+    <span class="k">for</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">sliced_out_ranges</span><span class="p">:</span>
+      <span class="n">result</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">result</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)]</span>
+
     <span class="k">return</span> <span class="n">result</span>
 
-  <span class="k">def</span> <span class="nf">_concat_column_slice_outputs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outs</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Concat sliced outputs result from column slicing back together&quot;&quot;&quot;</span>
-    <span class="k">for</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">sliced_out_ranges</span><span class="p">:</span>
-      <span class="n">outs</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">outs</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">],</span> <span class="n">axis</span><span class="o">=-</span><span class="mi">1</span><span class="p">)]</span>
-    <span class="k">return</span> <span class="n">outs</span>
+  <span class="k">def</span> <span class="nf">_call_row_slice</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>
+    <span class="c1"># initial version, just allgather input, do lookup and allreduce output</span>
+    <span class="c1"># for lookup that does not exist on this worker(OOB), zero vector is added in</span>
+    <span class="n">inputs</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">grouped_allgather</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+    <span class="c1"># offset inputs</span>
+    <span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">inp</span> <span class="k">if</span> <span class="n">offset</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">tf</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">tf</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span> <span class="o">+</span> <span class="n">offset</span>
+        <span class="k">for</span> <span class="n">inp</span><span class="p">,</span> <span class="n">offset</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">row_inputs_offsets</span><span class="p">)</span>
+    <span class="p">]</span>
+    <span class="c1"># do embedding</span>
+    <span class="n">outputs</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">row_layers</span><span class="p">[</span><span class="n">m</span><span class="p">](</span><span class="n">inp</span><span class="p">)</span> <span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">inp</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">map_groups</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">inputs</span><span class="p">)]</span>
+    <span class="n">outputs</span> <span class="o">=</span> <span class="n">grouped_reducescatter_unscaled</span><span class="p">(</span><span class="n">outputs</span><span class="p">)</span>
 
-<div class="viewcode-block" id="DistributedEmbedding.set_weights"><a class="viewcode-back" href="../../../../dist_model_parallel.html#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.set_weights">[docs]</a>  <span class="k">def</span> <span class="nf">set_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">chunk</span><span class="o">=</span><span class="mi">134217728</span><span class="p">,</span> <span class="n">use_lock</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Sets the weights of the layer, from NumPy arrays.</span>
+    <span class="k">return</span> <span class="n">outputs</span>
 
-<span class="sd">    Args:</span>
-<span class="sd">      weights (list): list containing global weights for all table.</span>
-<span class="sd">          item in the list can be either numpy array or file path to load from.</span>
-<span class="sd">      chunk (int): max number of elements per chunk when set weight on GPU by chunks.</span>
-<span class="sd">          this will be round to number of rows base on weight shape.</span>
-<span class="sd">      use_lock (bool): If true, set weights rank by rank in lock step to avoid OOM. Default False.</span>
-<span class="sd">    Raises:</span>
-<span class="sd">      ValueError: If length of weights does not match length of expected weights.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">use_lock</span><span class="p">:</span>
-      <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">):</span>
-        <span class="n">hvd</span><span class="o">.</span><span class="n">broadcast_object</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+  <span class="k">def</span> <span class="nf">set_col_slice_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">weights</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">weights</span><span class="p">:</span>
+      <span class="k">return</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+      <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">weights</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="o">=</span><span class="n">path</span><span class="p">,</span> <span class="n">mmap_mode</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">weights</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
       <span class="n">slice_info</span> <span class="o">=</span> <span class="p">[[</span><span class="n">rank_table_id</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">table_id</span><span class="p">)</span>
                      <span class="k">for</span> <span class="n">rank_table_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_ids</span><span class="p">]</span>
                     <span class="k">for</span> <span class="n">table_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">weights</span><span class="p">))]</span>
+      <span class="n">local_info</span> <span class="o">=</span> <span class="p">[</span><span class="n">slice_info</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_ids</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]]</span>
       <span class="n">weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">weights</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_ids</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]]</span>
       <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">weights</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">str</span><span class="p">):</span>
         <span class="n">weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="o">=</span><span class="n">path</span><span class="p">,</span> <span class="n">mmap_mode</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">weights</span><span class="p">]</span>
-      <span class="n">local_info</span> <span class="o">=</span> <span class="p">[</span><span class="n">slice_info</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_ids</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]]</span>
 
       <span class="k">def</span> <span class="nf">_slice_weight_for_rank</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="n">global_rank</span><span class="p">):</span>
         <span class="n">num_columns</span> <span class="o">=</span> <span class="n">weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
@@ -681,15 +823,64 @@
           <span class="n">_slice_weight_for_rank</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">)</span>
           <span class="k">for</span> <span class="n">weight</span><span class="p">,</span> <span class="n">info</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">local_info</span><span class="p">)</span>
       <span class="p">]</span>
-    <span class="k">else</span><span class="p">:</span>
-      <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">weights</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="n">weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="o">=</span><span class="n">path</span><span class="p">,</span> <span class="n">mmap_mode</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">weights</span><span class="p">]</span>
+
     <span class="c1"># now we have weight distributed, need to concat</span>
     <span class="n">concat_weights</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">local_group_list</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">]:</span>
       <span class="n">to_concat</span> <span class="o">=</span> <span class="p">[</span><span class="n">weights</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">group</span><span class="p">]</span>
       <span class="n">concat_weights</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">to_concat</span><span class="p">))</span>
-    <span class="n">weights</span> <span class="o">=</span> <span class="n">concat_weights</span>
+    <span class="k">return</span> <span class="n">concat_weights</span>
+
+  <span class="k">def</span> <span class="nf">set_row_slice_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">weights</span><span class="p">):</span>
+    <span class="c1"># we make sure no table is in this group in single worker case</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">weights</span><span class="p">:</span>
+      <span class="k">return</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">weights</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">str</span><span class="p">):</span>
+      <span class="n">weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="o">=</span><span class="n">path</span><span class="p">,</span> <span class="n">mmap_mode</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">weights</span><span class="p">]</span>
+    <span class="n">local_info</span> <span class="o">=</span> <span class="p">[[</span><span class="mi">1</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">world_size</span><span class="p">)]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">weights</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">_slice_weight_for_rank</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="n">global_rank</span><span class="p">):</span>
+      <span class="n">num_columns</span> <span class="o">=</span> <span class="n">weight</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+      <span class="n">num_slices</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">info</span><span class="p">)</span>
+      <span class="n">column_per_slice</span> <span class="o">=</span> <span class="n">num_columns</span> <span class="o">//</span> <span class="n">num_slices</span>
+      <span class="n">remainder</span> <span class="o">=</span> <span class="n">num_columns</span> <span class="o">%</span> <span class="n">num_slices</span>
+      <span class="n">rank</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">info</span><span class="p">[:</span><span class="n">global_rank</span><span class="p">])</span>
+
+      <span class="n">start</span> <span class="o">=</span> <span class="n">column_per_slice</span> <span class="o">*</span> <span class="n">rank</span> <span class="o">+</span> <span class="nb">min</span><span class="p">(</span><span class="n">rank</span><span class="p">,</span> <span class="n">remainder</span><span class="p">)</span>
+      <span class="n">rank</span> <span class="o">+=</span> <span class="mi">1</span>
+      <span class="n">end</span> <span class="o">=</span> <span class="n">column_per_slice</span> <span class="o">*</span> <span class="n">rank</span> <span class="o">+</span> <span class="nb">min</span><span class="p">(</span><span class="n">rank</span><span class="p">,</span> <span class="n">remainder</span><span class="p">)</span>
+      <span class="k">return</span> <span class="n">weight</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">,</span> <span class="p">:]</span>
+
+    <span class="n">weights</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">_slice_weight_for_rank</span><span class="p">(</span><span class="n">weight</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">weight</span><span class="p">,</span> <span class="n">info</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">local_info</span><span class="p">)</span>
+    <span class="p">]</span>
+    <span class="k">return</span> <span class="n">weights</span>
+
+<div class="viewcode-block" id="DistributedEmbedding.set_weights"><a class="viewcode-back" href="../../../../dist_model_parallel.html#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.set_weights">[docs]</a>  <span class="k">def</span> <span class="nf">set_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">chunk</span><span class="o">=</span><span class="mi">134217728</span><span class="p">,</span> <span class="n">use_lock</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Sets the weights of the layer, from NumPy arrays.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">      weights (list): list containing global weights for all table.</span>
+<span class="sd">          item in the list can be either numpy array or file path to load from.</span>
+<span class="sd">      chunk (int): max number of elements per chunk when set weight on GPU by chunks.</span>
+<span class="sd">          this will be round to number of rows base on weight shape.</span>
+<span class="sd">      use_lock (bool): If true, set weights rank by rank in lock step to avoid OOM. Default False.</span>
+<span class="sd">    Raises:</span>
+<span class="sd">      ValueError: If length of weights does not match length of expected weights.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">use_lock</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">):</span>
+        <span class="n">hvd</span><span class="o">.</span><span class="n">broadcast_object</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">dp_weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">weights</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+    <span class="n">col_weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">weights</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_groups</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
+    <span class="n">row_weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">weights</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_groups</span><span class="p">[</span><span class="mi">2</span><span class="p">]]</span>
+
+    <span class="n">col_weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_col_slice_weights</span><span class="p">(</span><span class="n">col_weights</span><span class="p">)</span>
+    <span class="n">row_weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_row_slice_weights</span><span class="p">(</span><span class="n">row_weights</span><span class="p">)</span>
+
+    <span class="n">weights</span> <span class="o">=</span> <span class="n">dp_weights</span> <span class="o">+</span> <span class="n">col_weights</span> <span class="o">+</span> <span class="n">row_weights</span>
     <span class="c1"># variable.assign and copy-on-write creates extra copy of weight that causes OOM</span>
     <span class="c1"># so here we scatter update by ~128M elements chunks instead of just do</span>
     <span class="c1"># super().set_weights(weights)</span>
@@ -713,8 +904,8 @@
                                     <span class="n">indices</span><span class="o">=</span><span class="n">indices</span><span class="p">,</span>
                                     <span class="n">dense_shape</span><span class="o">=</span><span class="n">weight</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
           <span class="n">weight</span><span class="o">.</span><span class="n">scatter_update</span><span class="p">(</span><span class="n">sparse_delta</span><span class="o">=</span><span class="n">update</span><span class="p">)</span>
-    <span class="k">del</span> <span class="n">weights</span>
 
+    <span class="k">del</span> <span class="n">weights</span>
     <span class="k">if</span> <span class="n">use_lock</span><span class="p">:</span>
       <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">rank</span><span class="p">):</span>
         <span class="n">hvd</span><span class="o">.</span><span class="n">broadcast_object</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span></div>
@@ -743,18 +934,17 @@
       <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">this_slice</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">result</span>
 
-<div class="viewcode-block" id="DistributedEmbedding.get_weights"><a class="viewcode-back" href="../../../../dist_model_parallel.html#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.get_weights">[docs]</a>  <span class="k">def</span> <span class="nf">get_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">all_ranks</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns the current weights of the layer, as NumPy arrays.</span>
+  <span class="k">def</span> <span class="nf">get_row_sliced_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">weights</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">weights</span><span class="p">:</span>
+      <span class="k">return</span> <span class="p">[]</span>
+    <span class="c1"># weights are already selected with group info</span>
+    <span class="c1"># assume row slice run on all workers, then allgather conveniently stitch them together</span>
+    <span class="n">weights</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">grouped_allgather</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">w</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">weights</span><span class="p">]</span>
 
-<span class="sd">    This override outputs global weights for all tables.</span>
-<span class="sd">    Args:</span>
-<span class="sd">      all_ranks (bool): If true, return weights in all ranks, otherwise only in rank 0.</span>
-<span class="sd">          Default False.</span>
-<span class="sd">    Returns:</span>
-<span class="sd">      result (list): List of weight tensors.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># avoid copy-on-read on dense access</span>
-    <span class="n">local_weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">read_var_no_copy</span><span class="p">(</span><span class="n">w</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="p">]</span>
+  <span class="k">def</span> <span class="nf">get_col_sliced_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">local_weights</span><span class="p">,</span> <span class="n">all_ranks</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">local_weights</span><span class="p">:</span>
+      <span class="k">return</span> <span class="p">[]</span>
     <span class="c1"># TODO(deyuf): undo concat locally first. this require we save original local config</span>
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
       <span class="n">concat_weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">w</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">local_weights</span><span class="p">]</span>
@@ -833,7 +1023,32 @@
           <span class="n">cur_id</span> <span class="o">=</span> <span class="n">cur</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
           <span class="n">cur_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">cur</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
       <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">cur_list</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">numpy</span><span class="p">())</span>
-      <span class="k">return</span> <span class="n">result</span></div>
+      <span class="k">return</span> <span class="n">result</span>
+
+<div class="viewcode-block" id="DistributedEmbedding.get_weights"><a class="viewcode-back" href="../../../../dist_model_parallel.html#distributed_embeddings.python.layers.dist_model_parallel.DistributedEmbedding.get_weights">[docs]</a>  <span class="k">def</span> <span class="nf">get_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">all_ranks</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns the current weights of the layer, as NumPy arrays.</span>
+
+<span class="sd">    This override outputs global weights for all tables.</span>
+<span class="sd">    Args:</span>
+<span class="sd">      all_ranks (bool): If true, return weights in all ranks, otherwise only in rank 0.</span>
+<span class="sd">          Default False.</span>
+<span class="sd">    Returns:</span>
+<span class="sd">      result (list): List of weight tensors.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># avoid copy-on-read on dense access, assume order here for code simplicity</span>
+    <span class="n">weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">read_var_no_copy</span><span class="p">(</span><span class="n">w</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span><span class="p">]</span>
+    <span class="n">num_dp</span><span class="p">,</span> <span class="n">num_col</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dp_layers</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">local_embedding_layers</span><span class="p">)</span>
+    <span class="n">dp_weights</span> <span class="o">=</span> <span class="n">weights</span><span class="p">[:</span><span class="n">num_dp</span><span class="p">]</span>
+    <span class="n">col_weights</span> <span class="o">=</span> <span class="n">weights</span><span class="p">[</span><span class="n">num_dp</span><span class="p">:</span><span class="n">num_dp</span> <span class="o">+</span> <span class="n">num_col</span><span class="p">]</span>
+    <span class="n">row_weights</span> <span class="o">=</span> <span class="n">weights</span><span class="p">[</span><span class="n">num_dp</span> <span class="o">+</span> <span class="n">num_col</span><span class="p">:]</span>
+
+    <span class="n">col_weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_col_sliced_weights</span><span class="p">(</span><span class="n">col_weights</span><span class="p">,</span> <span class="n">all_ranks</span><span class="p">)</span>
+    <span class="n">row_weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_row_sliced_weights</span><span class="p">(</span><span class="n">row_weights</span><span class="p">)</span>
+
+    <span class="n">weights</span> <span class="o">=</span> <span class="n">dp_weights</span> <span class="o">+</span> <span class="n">col_weights</span> <span class="o">+</span> <span class="n">row_weights</span>
+    <span class="n">group_order_table_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">idx</span> <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">table_groups</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">group</span><span class="p">]</span>
+    <span class="n">weights</span> <span class="o">=</span> <span class="p">[</span><span class="n">w</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">w</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">group_order_table_ids</span><span class="p">,</span> <span class="n">weights</span><span class="p">))]</span>
+    <span class="k">return</span> <span class="n">weights</span></div>
 
   <span class="nd">@tf_utils</span><span class="o">.</span><span class="n">shape_type_conversion</span>
   <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_shape</span><span class="p">):</span>
@@ -849,19 +1064,40 @@
         <span class="k">if</span> <span class="n">batch_sizes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">world_size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
           <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
               <span class="sa">F</span><span class="s2">&quot;Global batchsize </span><span class="si">{</span><span class="n">batch_sizes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> not divisible workers count </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">world_size</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">local_embedding_layers</span><span class="p">:</span>
+
+    <span class="c1"># build both col and row slice tables</span>
+    <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">dp_layers</span><span class="p">:</span>
+      <span class="n">layer</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">input_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">input_shape</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+      <span class="c1"># set built flag to prevent above build trigger again and above flag fall off</span>
+      <span class="n">layer</span><span class="o">.</span><span class="n">built</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="c1"># build both col and row slice tables</span>
+    <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">local_embedding_layers</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">row_layers</span><span class="p">:</span>
       <span class="n">layer</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">input_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">input_shape</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
       <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">layer</span><span class="o">.</span><span class="n">trainable_weights</span><span class="p">:</span>
         <span class="c1"># Mark local(model parallel) variable. use prefix de(distributed embeddings) to avoid conflicts.</span>
         <span class="n">var</span><span class="o">.</span><span class="n">de_local</span> <span class="o">=</span> <span class="kc">True</span>
       <span class="c1"># set built flag to prevent above build trigger again and above flag fall off</span>
       <span class="n">layer</span><span class="o">.</span><span class="n">built</span> <span class="o">=</span> <span class="kc">True</span>
+
     <span class="bp">self</span><span class="o">.</span><span class="n">built</span> <span class="o">=</span> <span class="kc">True</span>
 
   <span class="k">def</span> <span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">):</span>  <span class="c1"># pylint: disable=missing-function-docstring</span>
-    <span class="c1"># TODO(skyw): Revisit logics of selecting call functions for different strategy</span>
-    <span class="n">outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_base</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
-    <span class="n">outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_concat_column_slice_outputs</span><span class="p">(</span><span class="n">outputs</span><span class="p">)</span>
+    <span class="c1"># call data parallel tables</span>
+    <span class="n">dp_in</span> <span class="o">=</span> <span class="p">[</span><span class="n">inputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">input_groups</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+    <span class="n">dp_out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_data_parallel</span><span class="p">(</span><span class="n">dp_in</span><span class="p">)</span> <span class="k">if</span> <span class="n">dp_in</span> <span class="k">else</span> <span class="p">[]</span>
+
+    <span class="c1"># call col slice tables</span>
+    <span class="n">col_in</span> <span class="o">=</span> <span class="p">[</span><span class="n">inputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">input_groups</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">dp_input</span> <span class="k">else</span> <span class="n">inputs</span>
+    <span class="n">col_out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_table_parallel</span><span class="p">(</span><span class="n">col_in</span><span class="p">)</span> <span class="k">if</span> <span class="n">col_in</span> <span class="k">else</span> <span class="p">[]</span>
+
+    <span class="c1"># call row slice tables</span>
+    <span class="n">row_in</span> <span class="o">=</span> <span class="p">[</span><span class="n">inputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">input_groups</span><span class="p">[</span><span class="mi">2</span><span class="p">]]</span>
+    <span class="n">row_out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_row_slice</span><span class="p">(</span><span class="n">row_in</span><span class="p">)</span> <span class="k">if</span> <span class="n">row_in</span> <span class="k">else</span> <span class="p">[]</span>
+
+    <span class="c1"># now we have output from all groups, reorder them into input order</span>
+    <span class="n">outputs</span> <span class="o">=</span> <span class="n">dp_out</span> <span class="o">+</span> <span class="n">col_out</span> <span class="o">+</span> <span class="n">row_out</span>
+    <span class="n">outputs</span> <span class="o">=</span> <span class="p">[</span><span class="n">outputs</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">strategy</span><span class="o">.</span><span class="n">rev_group_ids</span><span class="p">]</span>
     <span class="k">return</span> <span class="n">outputs</span></div>
 
 
@@ -881,6 +1117,12 @@
       <span class="n">mp_vars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">var</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
       <span class="n">dp_vars</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">var</span><span class="p">)</span>
+
+  <span class="c1"># modify broadcast to ignore_name_scope by default</span>
+  <span class="c1"># TODO(deyuf): make it not positional</span>
+  <span class="n">_broadcast_defaults</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">hvd</span><span class="o">.</span><span class="n">broadcast</span><span class="o">.</span><span class="vm">__defaults__</span><span class="p">)</span>
+  <span class="n">_broadcast_defaults</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+  <span class="n">hvd</span><span class="o">.</span><span class="n">broadcast</span><span class="o">.</span><span class="vm">__defaults__</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">_broadcast_defaults</span><span class="p">)</span>
   <span class="n">hvd</span><span class="o">.</span><span class="n">broadcast_variables</span><span class="p">(</span><span class="n">dp_vars</span><span class="p">,</span> <span class="n">root_rank</span><span class="o">=</span><span class="n">root_rank</span><span class="p">)</span></div>
 
 
@@ -902,7 +1144,7 @@
   <span class="k">if</span> <span class="n">horovod</span><span class="o">.</span><span class="n">__version__</span> <span class="o">&lt;</span> <span class="s1">&#39;0.27.0&#39;</span><span class="p">:</span>
     <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
         <span class="s2">&quot;DistributedGradientTape is only compatible with horovod 0.27 or newer.&quot;</span><span class="p">)</span>
-  <span class="n">tape</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">DistributedGradientTape</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+  <span class="n">tape</span> <span class="o">=</span> <span class="n">hvd</span><span class="o">.</span><span class="n">DistributedGradientTape</span><span class="p">(</span><span class="n">sparse_as_dense</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
   <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">tape</span><span class="o">.</span><span class="n">watched_variables</span><span class="p">():</span>
     <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="s1">&#39;de_local&#39;</span><span class="p">):</span>
       <span class="n">tape</span><span class="o">.</span><span class="n">register_local_source</span><span class="p">(</span><span class="n">var</span><span class="p">)</span>
@@ -931,7 +1173,7 @@
 
   <span class="k">if</span> <span class="n">horovod</span><span class="o">.</span><span class="n">__version__</span> <span class="o">&lt;</span> <span class="s1">&#39;0.27.0&#39;</span><span class="p">:</span>
     <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Distributed Optimizer is only compatible with horovod 0.27 or newer&quot;</span><span class="p">)</span>
-  <span class="n">opt</span> <span class="o">=</span> <span class="n">hvd_keras</span><span class="o">.</span><span class="n">DistributedOptimizer</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+  <span class="n">opt</span> <span class="o">=</span> <span class="n">hvd_keras</span><span class="o">.</span><span class="n">DistributedOptimizer</span><span class="p">(</span><span class="n">sparse_as_dense</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
   <span class="n">opt</span><span class="o">.</span><span class="n">local_var_registed</span> <span class="o">=</span> <span class="kc">False</span>
   <span class="n">opt</span><span class="o">.</span><span class="n">raw_allreduce</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">_allreduce</span>
   <span class="n">opt</span><span class="o">.</span><span class="n">_allreduce</span> <span class="o">=</span> <span class="n">types</span><span class="o">.</span><span class="n">MethodType</span><span class="p">(</span><span class="n">_register_then_allreduce</span><span class="p">,</span> <span class="n">opt</span><span class="p">)</span>
@@ -986,7 +1228,7 @@
 
   <div role="contentinfo">
     <p>
-        &copy; Copyright 2022, NVIDIA.
+        &copy; Copyright 2023, NVIDIA.
 
     </p>
   </div>

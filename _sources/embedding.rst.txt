@@ -28,3 +28,14 @@ Embedding Ops
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autofunction:: embedding_lookup
+
+IntegerLookup Layers
+--------------------
+.. currentmodule:: distributed_embeddings.python.layers.embedding
+
+:hidden:`Embedding`
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: IntegerLookup
+    :members:
+    :exclude-members: call

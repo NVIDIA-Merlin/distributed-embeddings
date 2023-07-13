@@ -103,8 +103,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="userguide.html">Distributed Model Parallel</a></li>
 <li class="toctree-l1"><a class="reference internal" href="userguide.html#embedding-layers">Embedding Layers</a></li>
-<li class="toctree-l1"><a class="reference internal" href="userguide.html#larger-than-gpu-memory-table">Larger than GPU memory table</a></li>
-<li class="toctree-l1"><a class="reference internal" href="userguide.html#shared-embedding">Shared Embedding</a></li>
+<li class="toctree-l1"><a class="reference internal" href="userguide.html#input-hashing">Input Hashing</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Package Reference</span></p>
 <ul class="current">
@@ -119,6 +118,13 @@
 <li class="toctree-l2"><a class="reference internal" href="#embedding-ops">Embedding Ops</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#embedding-lookup"><span class="hidden-section">embedding_lookup</span></a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#distributed_embeddings.python.ops.embedding_lookup_ops.embedding_lookup"><code class="docutils literal notranslate"><span class="pre">embedding_lookup()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#integerlookup-layers">IntegerLookup Layers</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#id2"><span class="hidden-section">Embedding</span></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#distributed_embeddings.python.layers.embedding.IntegerLookup"><code class="docutils literal notranslate"><span class="pre">IntegerLookup</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -344,6 +350,21 @@ of CSR format hotness matrix, thus can be directly constructed.</p>
 
 </section>
 </section>
+<section id="integerlookup-layers">
+<h2>IntegerLookup Layers<a class="headerlink" href="#integerlookup-layers" title="Permalink to this heading">¶</a></h2>
+<section id="id2">
+<h3><span class="hidden-section">Embedding</span><a class="headerlink" href="#id2" title="Permalink to this heading">¶</a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="distributed_embeddings.python.layers.embedding.IntegerLookup">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">distributed_embeddings.python.layers.embedding.</span></span><span class="sig-name descname"><span class="pre">IntegerLookup</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/distributed_embeddings/python/layers/embedding.html#IntegerLookup"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#distributed_embeddings.python.layers.embedding.IntegerLookup" title="Permalink to this definition">¶</a></dt>
+<dd><p>A preprocessing layer which maps integer features to contiguous ranges.
+Vocabulary is generated on the fly, static vocabulary and adapt() will be supported.
+Partially support features of tf.keras.layers.IntegerLookup.
+Frequency of keys are counted when GPU algorithm is used.</p>
+</dd></dl>
+
+</section>
+</section>
 </section>
 
 
@@ -368,7 +389,7 @@ of CSR format hotness matrix, thus can be directly constructed.</p>
 
   <div role="contentinfo">
     <p>
-        &copy; Copyright 2022, NVIDIA.
+        &copy; Copyright 2023, NVIDIA.
 
     </p>
   </div>
