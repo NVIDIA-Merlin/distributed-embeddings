@@ -23,7 +23,7 @@ import sphinx_glpi_theme
 # -- Project information -----------------------------------------------------
 
 project = 'distributed-embeddings'
-copyright = '2022, NVIDIA'  # pylint: disable=redefined-builtin
+copyright = '2023, NVIDIA'  # pylint: disable=redefined-builtin
 author = 'NVIDIA'
 
 # -- General configuration ---------------------------------------------------
