@@ -47,6 +47,7 @@ flags.DEFINE_bool("use_model_fit", False, help="Use Keras model.fit")
 flags.DEFINE_string("embedding_device", "/GPU:0", help="device to place embedding. inputs are placed on same device")
 flags.DEFINE_enum("embedding_api", "tfde", ["native", "tfde"], help="embedding to use.")
 flags.DEFINE_bool("amp", False, help="Use mixed precision")
+flags.DEFINE_float("mean_dynamic_hotness_ratio", 1.0, help="For enabling dynamic hot input. Ratio of nnz to set the average hotness of data generated for a particular feature. Set between [0,1]") 
 # yapf: enable
 # pylint: enable=line-too-long
 
@@ -91,7 +92,8 @@ def main(_):
                              alpha=FLAGS.alpha,
                              mp_input_ids=mp_input_ids,
                              num_batches=FLAGS.num_data_batches,
-                             embedding_device=FLAGS.embedding_device)
+                             embedding_device=FLAGS.embedding_device,
+                             mean_hotness_ratio=FLAGS.mean_dynamic_hotness_ratio)
 
   if FLAGS.optimizer == "sgd":
     optimizer = tf.keras.optimizers.SGD(learning_rate=0.03, momentum=0)

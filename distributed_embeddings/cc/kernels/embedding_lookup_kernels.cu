@@ -30,6 +30,272 @@ namespace cg = cooperative_groups;
 
 namespace tensorflow {
 
+constexpr int kWarpSize = 32;
+constexpr int kReduceIndicesPerWarp = 32;
+constexpr int kWarpsPerCTA = 4;
+
+template<typename IndexT>
+__global__ void FlagWgradBoundaries(int32_t* flags,
+                                    const IndexT* __restrict sorted_indices,
+                                    IndexT num_indices) {
+  IndexT idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (idx == 0) {
+    flags[0] = 0;
+  }
+
+  for (; idx < num_indices - 1; idx += blockDim.x * gridDim.x) {
+    IndexT curr_id = sorted_indices[idx];
+    IndexT next_id = sorted_indices[idx + 1];
+    flags[idx + 1] = static_cast<int32_t>(next_id != curr_id);
+  }
+}
+
+/**
+ * @brief Performs reduce within each warp. If the gradients for a particular category only span 1 warp, or the warp is
+ * the last one accumulating gradients for that category, then it outputs the full/partial wgrad to unique_wgrad.
+ * Otherwise, if the gradients span across multiple warps, those warps will store this partial wgrad in partial_wgrad.
+ *
+ * @tparam T Gradient type
+ * @tparam IndexT Indices Type
+ * @tparam row_num_accumulators Equal to round_up(embedding_width/warpSize)
+ * @param grad The dY gradients
+ * @param embedding_width The number of elements in each embedding vector
+ * @param indptr Row offsets, num rows to reduce is computed by indptr[n+1] - indptr[n]
+ * @param sorted_indices Category Ids corresponding to each row
+ * @param sorted_row_ids Gradient Ids, i.e indices into dY
+ * @param unique_wgrad_ids Ids into unique_wgrad, since unique_wgrad is sparse
+ * @param unique_wgrad The output wgrad buffer containing fully reduced gradients
+ * @param partial_wgrad Intermediate buffer to store partially reduced gradients for each warp
+ * @param combiner How to reduce the gradients dY
+ * @param num_unique_ids The number of unique categories/embeddings to compute wgrad for
+ * @param weights Used for mean reduce
+ */
+template <typename T, typename IndexT, int row_num_accumulators>
+__global__ void EmbeddingWgradPartialReduceVariableHot(const T* grad,
+                                                       int embedding_width,
+                                                       const int32_t* indptr,
+                                                       const IndexT* sorted_indices,
+                                                       const int32_t* sorted_row_ids,
+                                                       const int32_t* unique_wgrad_ids,
+                                                       T* unique_wgrad,
+                                                       T* partial_wgrad,
+                                                       Combiner combiner,
+                                                       IndexT num_unique_ids,
+                                                       const T* weights) {
+  T acc[row_num_accumulators] = { 0 };
+
+  // thread positional data
+  const int lane_id = threadIdx.x & 31;
+  const int warp_id = threadIdx.x >> 5;
+  const int num_warps = blockDim.x >> 5;
+
+  IndexT start_index = (blockIdx.x * num_warps + warp_id) * kReduceIndicesPerWarp;
+  IndexT num_indices = indptr[num_unique_ids];
+
+  if (start_index >= num_indices) {
+    return;
+  }
+
+  int num_local_indices = min(kReduceIndicesPerWarp, static_cast<int>(num_indices - start_index));
+
+  __shared__ int32_t s_dY_id[kWarpsPerCTA][kReduceIndicesPerWarp];
+  __shared__ T s_weights[kWarpsPerCTA][kReduceIndicesPerWarp];
+  __shared__ IndexT s_unique_wgrad_ids[kWarpsPerCTA][kReduceIndicesPerWarp];
+  __shared__ int s_write_wgrad[kWarpsPerCTA][kReduceIndicesPerWarp+1];
+
+  sorted_row_ids += start_index;
+  sorted_indices += start_index;
+  unique_wgrad_ids += start_index;
+
+  for (int i = lane_id; i < num_local_indices; i += kWarpSize) {
+    s_dY_id[warp_id][i] = sorted_row_ids[i];
+    s_unique_wgrad_ids[warp_id][i] = unique_wgrad_ids[i];
+    s_write_wgrad[warp_id][i] = sorted_indices[i] != sorted_indices[i + 1];
+  }
+
+  // Whether this warp should output partial wgrad
+  if (lane_id == 0) {
+    s_write_wgrad[warp_id][num_local_indices] = sorted_indices[num_local_indices - 1] == sorted_indices[num_local_indices];
+  }
+
+  if (weights) {
+    for (int i = lane_id; i < num_local_indices; i += kWarpSize) {
+      s_weights[warp_id][i] = weights[s_dY_id[warp_id][i]];
+    }
+  } else {
+    for (int i = lane_id; i < num_local_indices; i += kWarpSize) {
+      s_weights[warp_id][i] = 1;
+    }
+  }
+
+  __syncwarp();
+
+  for (int i = 0; i < num_local_indices; ++i) {
+
+    IndexT dY_id = s_dY_id[warp_id][i];
+    T weight = s_weights[warp_id][i];
+
+    // load dY
+    const auto src = &grad[dY_id * embedding_width];
+    _Pragma("unroll")
+    for (int j = 0; j < row_num_accumulators; ++j) {
+      if (j * kWarpSize + lane_id < embedding_width) {
+        acc[j] += weight * src[j * kWarpSize + lane_id];
+      }
+    }
+
+    // when category changes, write out to wgrad
+    if (s_write_wgrad[warp_id][i]) {
+      IndexT unique_row_id = s_unique_wgrad_ids[warp_id][i];
+      auto dst = &unique_wgrad[unique_row_id * embedding_width];
+
+      _Pragma("unroll")
+      for (int j = 0; j < row_num_accumulators; ++j) {
+        if (j * kWarpSize + lane_id < embedding_width) {
+          dst[j * kWarpSize + lane_id] = acc[j];
+        }
+        acc[j] = 0.f; // reset accumulator
+      }
+    }
+  }
+
+  // If the number of dY gradients spanned more than this warp for the same category
+  // then we need to write out the partial reduce to the partial wgrad buffer
+  if (start_index + num_local_indices < num_indices) {
+    // category == next_category
+    if (s_write_wgrad[warp_id][num_local_indices]) {
+      auto dst = &partial_wgrad[(blockIdx.x * num_warps + warp_id) * embedding_width];
+
+      _Pragma("unroll")
+      for (int j = 0; j < row_num_accumulators; ++j) {
+        if (j * kWarpSize + lane_id < embedding_width) {
+          dst[j * kWarpSize + lane_id] = acc[j];
+        }
+      }
+    }
+  }
+}
+
+/**
+ * @brief Reduces the partial wgrads and outputs the final reduction to unique_wgrad. Each warp will reduce N many
+ * partial wgrads, and then atomically add this local reduction to the output unique_wgrad buffer.
+ *
+ * @tparam T Gradient type
+ * @tparam IndexT Indices Type
+ * @tparam row_num_accumulators Equal to round_up(embedding_width/warpSize)
+ * @param embedding_width The number of elements in each embedding vector
+ * @param indptr Row offsets, num rows to reduce is computed by indptr[n+1] - indptr[n]
+ * @param sorted_indices Category Ids corresponding to each row
+ * @param unique_wgrad_ids Ids into unique_wgrad, since unique_wgrad is sparse
+ * @param unique_wgrad The output wgrad buffer containing fully reduced gradients
+ * @param partial_wgrad Intermediate buffer to store partially reduced gradients for each warp
+ * @param combiner How to reduce the gradients dY
+ * @param num_unique_ids The number of unique categories/embeddings to compute wgrad for
+ */
+template <typename T, typename IndexT, int row_num_accumulators>
+__global__ void EmbeddingWgradFinalReduceVariableHot(int embedding_width,
+                                                     const int32_t* indptr,
+                                                     const IndexT* sorted_indices,
+                                                     const int32_t* unique_wgrad_ids,
+                                                     T* unique_wgrad,
+                                                     T* partial_wgrad,
+                                                     Combiner combiner,
+                                                     IndexT num_unique_ids) {
+  T acc[row_num_accumulators] = { 0 };
+
+  // thread positional data
+  const int lane_id = threadIdx.x & 31;
+  const int warp_id = threadIdx.x >> 5;
+  const int num_warps = blockDim.x >> 5;
+
+  IndexT start_index = (blockIdx.x * num_warps + warp_id) * kReduceIndicesPerWarp;
+
+  IndexT num_indices = indptr[num_unique_ids];
+  // round down because the last warp writes to unique_wgrad, so we only need to accumulate for all
+  // warps but the last warp
+  IndexT num_partial_wgrads = num_indices / kReduceIndicesPerWarp;
+
+  if (start_index >= num_indices) {
+    return;
+  }
+
+  int num_local_partial_wgrads = min(kReduceIndicesPerWarp, static_cast<int>(num_partial_wgrads - start_index));
+
+  __shared__ IndexT s_unique_row_ids[kWarpsPerCTA][kReduceIndicesPerWarp];
+  __shared__ int s_has_partial_wgrad[kWarpsPerCTA][kReduceIndicesPerWarp];
+  __shared__ int s_write_wgrad[kWarpsPerCTA][kReduceIndicesPerWarp];
+
+  for (int i = lane_id; i < num_local_partial_wgrads; i += kWarpSize) {
+    IndexT next_warp_start = (start_index + i + 1) * kReduceIndicesPerWarp;
+    IndexT next_next_warp_start = (start_index + i + 2) * kReduceIndicesPerWarp;
+
+    auto warp_last_category = sorted_indices[next_warp_start - 1];
+    auto next_warp_first_category = sorted_indices[next_warp_start];
+
+    s_unique_row_ids[warp_id][i] = unique_wgrad_ids[next_warp_start - 1];
+    s_has_partial_wgrad[warp_id][i] = warp_last_category == next_warp_first_category;
+
+    // Precompute where to add accumulated wgrad to unqiue_wgrad in order to decrease
+    // latency on critical path and improve memory bandwidth.
+    if (s_has_partial_wgrad[warp_id][i] && next_next_warp_start < num_indices) {
+      // In the example below, there is no partial wgrad for Warp N+2 because categories B
+      // do not span to the next warp.
+      //
+      ///         Warp N          Warp N+1        Warp N+2         Warp N+3
+      //    --------------------------------------------------------------------
+      //    |      Cat A    ||      Cat A    || Cat A | Cat B ||    Cat C      |  = sorted_indices
+      //    --------------------------------------------------------------------
+      //    |    PartWgrad  ||    PartWgrad  ||      N/A      ||   PartWgrad   |  = partial_wgrad
+      //    --------------------------------------------------------------------
+      //
+      // To determine whether we should flush our accumulated wgrad to gmem (unique_wgrad)
+      // we need to look 2 warps ahead. If the first category of the next-next warp does not
+      // match, then the next warp has already written its accumulated wgrad to unique_wgrad
+      // meaning our current warp contains the last partial wgrad so we need to write it.
+      // The other condition for writing is if we are the last loaded wgrad in the warp
+      IndexT next_next_warp_first_category = sorted_indices[next_next_warp_start];
+      s_write_wgrad[warp_id][i] = (warp_last_category != next_next_warp_first_category) || (i == num_local_partial_wgrads - 1);
+    } else {
+      s_write_wgrad[warp_id][i] = s_has_partial_wgrad[warp_id][i];
+    }
+  }
+
+  __syncwarp();
+
+  for (int i = 0; i < num_local_partial_wgrads; ++i) {
+
+    bool have_partial_wgrad = s_has_partial_wgrad[warp_id][i];
+    bool write_wgrad = s_write_wgrad[warp_id][i];
+
+    // accumulate partial wgrad
+    if (have_partial_wgrad) {
+      IndexT dY_id = start_index + i;
+      const auto src = &partial_wgrad[dY_id * embedding_width];
+
+#pragma unroll
+      for (int j = 0; j < row_num_accumulators; ++j) {
+        if (j * kWarpSize + lane_id < embedding_width) {
+          acc[j] += src[j * kWarpSize + lane_id];
+        }
+      }
+    }
+
+    if (write_wgrad) {
+      IndexT unique_row_id = s_unique_row_ids[warp_id][i];
+      auto dst = &unique_wgrad[unique_row_id * embedding_width];
+
+      _Pragma("unroll")
+      for (int j = 0; j < row_num_accumulators; ++j) {
+        if (j * kWarpSize + lane_id < embedding_width) {
+          atomicAdd(&dst[j * kWarpSize + lane_id], acc[j]);
+        }
+        acc[j] = 0.f; // reset accumulator
+      }
+    }
+  }
+}
+
 template <typename T, typename TIndex, int tile, int row>
 __device__ void EmbeddingReduceByIndices(cg::thread_block_tile<tile> g, T* out, const T* params,
                                          int embedding_width, int query_nnz, const TIndex* indices,
@@ -173,9 +439,9 @@ __device__ void EmbeddingReduceByIndicesWide(cg::thread_block_tile<tile> g, T* o
 }
 
 template <typename T, typename TIndex, int tile, int row>
-__global__ void EmbeddingLookUpVariableHot(const T* params, int embedding_width,
-                                           const TIndex* indptr, const TIndex* indices, T* out,
-                                           Combiner combiner, TIndex num_rows, const T* weights) {
+__global__ void EmbeddingLookUpVariableHot(const T* __restrict params, int embedding_width,
+                                           const TIndex* __restrict indptr, const TIndex* __restrict indices, T* __restrict out,
+                                           Combiner combiner, TIndex num_rows, const T* __restrict weights) {
   auto row_group = cg::tiled_partition<tile>(cg::this_thread_block());
 
   // smem same size as block size.
@@ -217,7 +483,7 @@ __global__ void EmbeddingLookUpVariableHot(const T* params, int embedding_width,
           for (int i = 1; i < blockDim.y; i++) {
             result[j] += shmem_values[i * blockDim.x + threadIdx.x];
           }
-          if (combiner == Combiner::Mean) {
+          if (combiner == Combiner::Mean && query_nnz > 0) {
             result[j] /= query_nnz;
           }
           if (j * tile + threadIdx.x < embedding_width) out[j * tile] = result[j];
@@ -235,7 +501,7 @@ __global__ void EmbeddingLookUpVariableHot(const T* params, int embedding_width,
                                                        shmem_indices, combiner, weights);
         _Pragma("unroll")
         for (int j = 0; j < (row + tile - 1) / tile; ++j) {
-          if (combiner == Combiner::Mean) {
+          if (combiner == Combiner::Mean && query_nnz > 0) {
             result[j] /= query_nnz;
           }
           if (j * tile + threadIdx.x < embedding_width) out[j * tile] = result[j];
@@ -301,7 +567,7 @@ __global__ void EmbeddingLookUpVariableHotWide(const T* params, int embedding_wi
             for (int i = 1; i < blockDim.y; i++) {
               result[j] += shmem_values[i * blockDim.x + threadIdx.x];
             }
-            if (combiner == Combiner::Mean) {
+            if (combiner == Combiner::Mean && query_nnz > 0) {
               result[j] /= query_nnz;
             }
             if (j * tile + threadIdx.x < rem_width)
@@ -319,7 +585,7 @@ __global__ void EmbeddingLookUpVariableHotWide(const T* params, int embedding_wi
               shmem_indices, combiner, weights, rem_width);
           _Pragma("unroll")
           for (int j = 0; j < (row + tile - 1) / tile; ++j) {
-            if (combiner == Combiner::Mean) {
+            if (combiner == Combiner::Mean && query_nnz > 0) {
               result[j] /= query_nnz;
             }
             if (j * tile + threadIdx.x < rem_width)
@@ -600,6 +866,146 @@ struct EmbeddingLookupVariableHotnessFunctor<Eigen::GpuDevice, T, TIndex> {
   }
 };
 
+
+template <typename T, typename TIndex>
+struct EmbeddingLookupVariableHotnessGradFunctor<Eigen::GpuDevice, T, TIndex> {
+  void operator()(OpKernelContext* context, const TIndex* ids_ptr, const TIndex* offset_in_ptr,
+                  const T* grad_ptr, int64_t num_ids, TIndex embedding_width, TIndex num_rows,
+                  int64_t dense_shape_dim0, int64_t max_red_len, Combiner combiner) const {
+    const auto& cu_stream = GetGpuStream(context);
+    cub::CountingInputIterator<int32_t> itr(0);
+
+    int64_t num_partial_wgrad_rows = std::ceil((float)num_ids / kReduceIndicesPerWarp);
+
+    // allocate intermediate results buffer
+    Tensor tmp_unique_ids;
+    Tensor offsets;
+    Tensor num_unique_ids;
+    Tensor sorted_ids;
+    Tensor tmp_wgrad_boundaries;
+    Tensor tmp_unqiue_wgrad_ids;
+    Tensor tmp_partial_wgrad;
+    context->allocate_temp(DataTypeToEnum<int32_t>::value, TensorShape({num_ids}), &tmp_wgrad_boundaries);
+    context->allocate_temp(DataTypeToEnum<int32_t>::value, TensorShape({num_ids}), &tmp_unqiue_wgrad_ids);
+    context->allocate_temp(DataTypeToEnum<TIndex>::value, TensorShape({num_ids}), &tmp_unique_ids);
+    context->allocate_temp(DataTypeToEnum<int32_t>::value, TensorShape({num_ids}), &offsets);
+    context->allocate_temp(DataTypeToEnum<TIndex>::value, TensorShape({1}), &num_unique_ids);
+    context->allocate_temp(DataTypeToEnum<TIndex>::value, TensorShape({num_ids}), &sorted_ids);
+    context->allocate_temp(DataTypeToEnum<T>::value, TensorShape({num_partial_wgrad_rows, embedding_width}), &tmp_partial_wgrad);
+    auto tmp_wgrad_boundaries_ptr = tmp_wgrad_boundaries.flat<int32_t>().data();
+    auto tmp_unique_wgrad_ids_ptr = tmp_unqiue_wgrad_ids.flat<int32_t>().data();
+    auto tmp_partial_wgrad_ptr = tmp_partial_wgrad.flat<T>().data();
+    auto tmp_unique_ids_ptr = tmp_unique_ids.flat<TIndex>().data();
+    auto offsets_ptr = offsets.flat<int32_t>().data();
+    auto num_unique_ids_ptr = num_unique_ids.flat<TIndex>().data();
+    auto sorted_ids_ptr = sorted_ids.flat<TIndex>().data();
+
+    Tensor row;
+    Tensor sorted_row;
+    context->allocate_temp(DataTypeToEnum<int32_t>::value, TensorShape({num_ids}), &row);
+    context->allocate_temp(DataTypeToEnum<int32_t>::value, TensorShape({num_ids}), &sorted_row);
+    auto row_ptr = row.flat<int32_t>().data();
+    auto sorted_row_ptr = sorted_row.flat<int32_t>().data();
+
+    T* weights_ptr = nullptr;
+    Tensor weights;
+    if (combiner == Combiner::Mean) {
+      context->allocate_temp(DataTypeToEnum<T>::value, TensorShape({num_rows}), &weights);
+      weights_ptr = weights.flat<T>().data();
+    }
+
+    TF_CHECK_OK(GpuLaunchKernel(OffsetToWeightsAndRowId<T, TIndex>, num_rows, 32, 0, cu_stream,
+                                offset_in_ptr, row_ptr, weights_ptr));
+
+    // Determine temporary device storage requirements
+    size_t temp_sort = 0;
+    size_t temp_unique = 0;
+    size_t temp_scan = 0;
+    cub::DeviceRadixSort::SortPairs(nullptr, temp_sort, ids_ptr, sorted_ids_ptr, row_ptr,
+                                    sorted_row_ptr, num_ids, 0, Log2Ceiling64(dense_shape_dim0),
+                                    cu_stream);
+    cub::DeviceSelect::UniqueByKey(nullptr, temp_unique, sorted_ids_ptr, itr, tmp_unique_ids_ptr,
+                                   offsets_ptr, num_unique_ids_ptr, num_ids, cu_stream);
+    cub::DeviceScan::InclusiveSum(nullptr, temp_scan, tmp_wgrad_boundaries_ptr, tmp_unique_wgrad_ids_ptr,
+                                    num_ids, cu_stream);
+    Tensor temp_storage;
+    size_t temp_storage_bytes = std::max(temp_sort, std::max(temp_unique, temp_scan));
+    context->allocate_temp(DT_INT8, TensorShape({static_cast<int64_t>(temp_storage_bytes)}),
+                           &temp_storage);
+
+    auto temp_storage_ptr = temp_storage.flat<int8>().data();
+    cub::DeviceRadixSort::SortPairs(temp_storage_ptr, temp_sort, ids_ptr, sorted_ids_ptr, row_ptr,
+                                    sorted_row_ptr, num_ids, 0, Log2Ceiling64(dense_shape_dim0),
+                                    cu_stream);
+    cub::DeviceSelect::UniqueByKey(temp_storage_ptr, temp_unique, sorted_ids_ptr, itr,
+                                   tmp_unique_ids_ptr, offsets_ptr, num_unique_ids_ptr, num_ids,
+                                   cu_stream);
+
+    // copy this back to host. should be ok to sync since there is not much to do in between
+    // TF way of doing it seems to be event query base
+    TIndex num_unique_ids_host = 0;
+    cudaMemcpyAsync(&num_unique_ids_host, num_unique_ids_ptr, sizeof(TIndex),
+                    cudaMemcpyDeviceToHost, cu_stream);
+
+    cudaMemcpyAsync(offsets_ptr + num_unique_ids_host, &num_ids, sizeof(int32_t),
+                    cudaMemcpyHostToDevice, cu_stream);
+    // allocate output
+    Tensor* unique_ids = nullptr;
+    OP_REQUIRES_OK(context,
+                   context->allocate_output(0, TensorShape({num_unique_ids_host}), &unique_ids));
+    auto unique_ids_ptr = unique_ids->flat<TIndex>().data();
+    cudaMemcpyAsync(unique_ids_ptr, tmp_unique_ids_ptr, num_unique_ids_host * sizeof(TIndex),
+                    cudaMemcpyDeviceToDevice, cu_stream);
+
+    Tensor* unique_grad = nullptr;
+    OP_REQUIRES_OK(context,
+                   context->allocate_output(1, TensorShape({num_unique_ids_host, embedding_width}),
+                                            &unique_grad));
+    auto unique_grad_ptr = unique_grad->flat<T>().data();
+
+    dim3 dim_block_flag(256);
+    dim3 dim_grid_flag(std::ceil((float)num_ids / dim_block_flag.x));
+    TF_CHECK_OK(GpuLaunchKernel(FlagWgradBoundaries<TIndex>, dim_grid_flag, dim_block_flag, 0, cu_stream,
+                                tmp_wgrad_boundaries_ptr, sorted_ids_ptr, num_ids));
+
+    cub::DeviceScan::InclusiveSum(temp_storage_ptr, temp_scan, tmp_wgrad_boundaries_ptr,
+                                  tmp_unique_wgrad_ids_ptr, num_ids, cu_stream);
+
+    dim3 dim_block(kWarpSize * kWarpsPerCTA);
+    dim3 dim_grid_partial(std::ceil((float)num_ids / dim_block.x));
+    dim3 dim_grid_final(std::ceil((float)num_partial_wgrad_rows / dim_block.x));
+
+  #define LAUNCH_WGRAD_KERNELS(num_accumulators) \
+    TF_CHECK_OK(GpuLaunchKernel(EmbeddingWgradPartialReduceVariableHot<T, TIndex, num_accumulators>, dim_grid_partial, \
+                                dim_block, 0, cu_stream, grad_ptr, embedding_width, \
+                                offsets_ptr, sorted_ids_ptr, sorted_row_ptr, tmp_unique_wgrad_ids_ptr, \
+                                unique_grad_ptr, tmp_partial_wgrad_ptr, Combiner::Sum, \
+                                num_unique_ids_host, weights_ptr)); \
+    TF_CHECK_OK(GpuLaunchKernel(EmbeddingWgradFinalReduceVariableHot<T, TIndex, num_accumulators>, dim_grid_final, \
+                                dim_block, 0, cu_stream, embedding_width, \
+                                offsets_ptr, sorted_ids_ptr, tmp_unique_wgrad_ids_ptr, \
+                                unique_grad_ptr, tmp_partial_wgrad_ptr, Combiner::Sum, \
+                                num_unique_ids_host));                            
+
+    if (embedding_width <= 32) {
+      LAUNCH_WGRAD_KERNELS(1);
+    } else if (embedding_width <= 64) {
+      LAUNCH_WGRAD_KERNELS(2);
+    } else if (embedding_width <= 128) {
+      LAUNCH_WGRAD_KERNELS(4);
+    } else if (embedding_width <= 256) {
+      LAUNCH_WGRAD_KERNELS(8);
+    } else if (embedding_width <= 512) {
+      LAUNCH_WGRAD_KERNELS(16);
+    } else if (embedding_width <= 1024) {
+      LAUNCH_WGRAD_KERNELS(32);
+    } else {
+      throw std::runtime_error("Embedding width > 1024 not currently supported");
+    }
+  }
+};
+
+/*
 template <typename T, typename TIndex>
 struct EmbeddingLookupVariableHotnessGradFunctor<Eigen::GpuDevice, T, TIndex> {
   void operator()(OpKernelContext* context, const TIndex* ids_ptr, const TIndex* offset_in_ptr,
@@ -772,7 +1178,7 @@ struct EmbeddingLookupVariableHotnessGradFunctor<Eigen::GpuDevice, T, TIndex> {
         break;
     }
   }
-};
+};*/
 
 template struct RowToSplitFunctor<Eigen::GpuDevice, int64_t>;
 template struct RowToSplitFunctor<Eigen::GpuDevice, int32_t>;

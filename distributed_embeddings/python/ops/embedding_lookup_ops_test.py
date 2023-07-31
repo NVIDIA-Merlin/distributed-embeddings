@@ -115,5 +115,36 @@ class EmbeddingLookupTest(tf.test.TestCase):
       self.assertAllClose(ref_g_dense, g_dense)
 
 
+  def test_variable_hotness_zero_hotness_regression(self):
+    # generates input ids where we skip
+    voc, emb, batch, max_hotness = 3, 32, 10, 5
+    # create dense representation of index matrix
+    data_a = tf.random.uniform(shape=[batch, max_hotness], minval=1, maxval=max_hotness + 1)
+    data_b = tf.random.uniform(shape=[batch], minval=1, maxval=max_hotness + 1)
+    # make sure there is no empty row
+    data_c = tf.reshape(tf.eye(max_hotness, batch_shape=[batch // max_hotness + 1]),
+                        [-1, max_hotness])[:batch]
+
+    data_0 = tf.cast((data_a / tf.reshape(data_b, [-1, 1]) + data_c) > 1, tf.int64)
+    data_1 = tf.random.uniform(shape=[batch, max_hotness], minval=0, maxval=voc, dtype=tf.int64)
+    data = data_0 * data_1
+
+    # COO format for tf native API
+    ref_ids = tf.sparse.from_dense(data)
+    test_ids = tf.sparse.from_dense(data)
+
+    initial_weight = tf.random.uniform([voc, emb], dtype=tf.float32)
+    param = tf.Variable(initial_weight)
+    red = 'mean'
+
+    with tf.GradientTape(persistent=True) as tape:
+      tape.watch(param)
+      ref_ret = tf.nn.embedding_lookup_sparse(param, ref_ids, sp_weights=None, combiner=red)
+      ret = embedding_lookup(param, test_ids, combiner=red)
+
+    # Seems some ops in sparse lookup is running on CPU and rounding differently
+    self.assertAllClose(ref_ret, ret)
+
+
 if __name__ == '__main__':
   tf.test.main()
