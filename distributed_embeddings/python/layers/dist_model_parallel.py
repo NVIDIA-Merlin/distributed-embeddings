@@ -535,7 +535,7 @@ class DistributedEmbedding(tf.keras.layers.Layer):
 
   def _call_data_parallel(self, inputs):
     outputs = [self.dp_layers[m](inp) for m, inp in zip(self.strategy.map_groups[0], inputs)]
-    outputs = [tf.cast(o, self.compute_dtype) for o in outputs]
+    outputs = [tf.cast(output, self.compute_dtype) for output in outputs]
 
     return outputs
 
@@ -619,7 +619,7 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     ]
     # do embedding
     outputs = [self.row_layers[m](inp) for m, inp in zip(self.strategy.map_groups[2], inputs)]
-    outputs = [tf.cast(o, self.compute_dtype, name='row_slice_cast') for o in outputs]
+    outputs = [tf.cast(output, self.compute_dtype, name='row_slice_cast') for output in outputs]
     outputs = grouped_reducescatter_unscaled(outputs)
 
     return outputs
