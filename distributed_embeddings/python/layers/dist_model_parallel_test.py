@@ -15,11 +15,20 @@
 """Test of distributed model parallel"""
 import random
 import time
+import os
+
+from absl import flags
 import tensorflow as tf
 from tensorflow.python.platform import test
 from tensorflow.python.keras import keras_parameterized
 import horovod.tensorflow as hvd
+
 from distributed_embeddings.python.layers import dist_model_parallel as dmp
+
+flags.DEFINE_bool("graph_mode", default=False, help="Run in graph mode")
+flags.DEFINE_string("mixed_precision_policy",
+                    default=None,
+                    help="Mixed precision policy to be set.")
 
 
 # There are some functions in TF that pylint can't inspect correctly which leads to incorrect
@@ -79,6 +88,7 @@ class EmbeddingListModel(tf.keras.Model):
     self.dense = tf.keras.layers.Dense(5)
     self.input_table_map = input_table_map
 
+  @tf.function
   def call(self, inputs):
     if self.dist_embeddings is not None:
       outs = self.dist_embeddings(inputs)
@@ -100,6 +110,9 @@ class EmbeddingListModel(tf.keras.Model):
 class TestHelperMixedin():
 
   def initialize_hvd(self):
+    os.environ['HOROVOD_STALL_CHECK_TIME_SECONDS'] = '5'
+    os.environ['HOROVOD_STALL_SHUTDOWN_TIME_SECONDS'] = '30'
+
     hvd.init()
     gpus = tf.config.experimental.list_physical_devices('GPU')
     for gpu in gpus:
@@ -158,6 +171,12 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase, TestHelperMixedin):
     super().__init__(*args, **kwargs)
     self.initialize_hvd()
     self.global_batch = 24
+
+    tf.config.run_functions_eagerly(not flags.FLAGS.graph_mode)
+
+    if flags.FLAGS.mixed_precision_policy:
+      policy = tf.keras.mixed_precision.Policy(flags.FLAGS.mixed_precision_policy)
+      tf.keras.mixed_precision.set_global_policy(policy)
 
   def run_and_test(self, ref_model, ref_inputs, test_model, test_inputs):
     tf.keras.utils.set_random_seed(int(time.time()) + self.hvd_rank)
@@ -410,6 +429,32 @@ class DistributedEmbeddingTest(keras_parameterized.TestCase, TestHelperMixedin):
                                     distribute=True,
                                     strategy='basic',
                                     test_custom_layer=True)
+
+    dp_inputs, _ = self.gen_inputs(table_sizes)
+    self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
+
+  def test_all_parallelism_modes(self):
+    """
+    This testcase is designed to check if all parallelism modes,
+    i.e., data-parallelism, table-parallism, column-parallelism,
+    and row-parallelism, work together correctly.
+    """
+
+    table_sizes = [[2, 8], [2, 16], [10, 8], [10, 16], [10, 16], [10, 16], [10, 16], [10, 16],
+                   [10, 32], [10, 128], [10, 128], [10, 128], [10, 128], [10, 1024], [100, 16],
+                   [100, 32], [100, 32], [100, 32], [100, 32], [100, 128], [100, 128], [1000, 16],
+                   [1000, 16], [1000, 48], [1000, 128], [1000, 128], [1000, 384], [10000, 64],
+                   [10000, 64], [10000, 2048], [100000, 32], [100000, 64], [100000, 64],
+                   [100000, 64], [100000, 128], [1000000, 96], [1000000, 128], [1000000, 128],
+                   [9999999, 8], [10000000, 8], [10000001, 8]]
+
+    ref_model = EmbeddingListModel(table_sizes, distribute=False)
+    test_model = EmbeddingListModel(table_sizes,
+                                    distribute=True,
+                                    strategy='memory_balanced',
+                                    data_parallel_threshold=10000,
+                                    column_slice_threshold=1000000,
+                                    row_slice_threshold=10000000)
 
     dp_inputs, _ = self.gen_inputs(table_sizes)
     self.run_and_test(ref_model, dp_inputs, test_model, dp_inputs)
