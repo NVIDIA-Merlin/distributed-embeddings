@@ -94,11 +94,11 @@ def main(_):
                              embedding_device=FLAGS.embedding_device)
 
   if FLAGS.optimizer == "sgd":
-    optimizer = tf.keras.optimizers.SGD(learning_rate=0.03, momentum=0)
+    optimizer = tf.keras.optimizers.legacy.SGD(learning_rate=0.03, momentum=0)
   if FLAGS.optimizer == "adagrad":
-    optimizer = tf.keras.optimizers.Adagrad()
+    optimizer = tf.keras.optimizers.legacy.Adagrad()
   if FLAGS.optimizer == "adam":
-    optimizer = tf.keras.optimizers.Adam()
+    optimizer = tf.keras.optimizers.legacy.Adam()
 
   bce = keras.losses.BinaryCrossentropy(from_logits=True)
   if FLAGS.use_model_fit:
