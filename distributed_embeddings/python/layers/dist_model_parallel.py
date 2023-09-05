@@ -56,6 +56,16 @@ def _get_shape(tensor):
   return tf.shape(tensor)
 
 
+def _argsort(l, key=None, reverse=False):
+  if key is None:
+    key = lambda x: x
+
+  r = list(sorted(enumerate(l), key=lambda x: key(x[1]), reverse=reverse))
+  order = [x[0] for x in r]
+  values = [x[1] for x in r]
+  return values, order
+
+
 @tf.custom_gradient
 def grouped_reducescatter_unscaled(inputs):
   outputs = hvd.grouped_reducescatter(inputs, op=hvd.Sum)
@@ -76,11 +86,23 @@ class DistEmbeddingStrategy():
     input_table_map (list or None): A list of table ids mapping each input to a table, i.e.,
         `input[i]` map to `table[input_table_map[i]]`. None means there are same number of
         inputs/tables and `input[i]` map to `table[i]`. Default None.
+    column_slice_threshold: desired upper bound of elements count in each slice.
+    row_slice_threshold: desired lower bound where table larger than this will be row sliced.
+    gpu_embedding_size: total number of local table-parallel embedding elements to fit on the GPU.
+                        if more elements are used, they will be CPU offloaded.
+                        Set to None (default) to try to fit all table-parallel tables on the GPU.
+                        CPU offloading row-sliced and data-parallel tables is not supported.
+    data_parallel_threshold: Embedding smaller than this will be run data-parallel.
 
   Attributes:
     strategy: string indicates how embedding tables are distributed.
     column_slice_threshold: desired upper bound of elements count in each slice.
-    column_slice_threshold: desired lower bound where table larger than this will be row sliced.
+    row_slice_threshold: desired lower bound where table larger than this will be row sliced.
+    gpu_embedding_size: total number of local table-parallel embedding elements to fit on the GPU.
+                        if more elements are used, they will be CPU offloaded.
+                        Set to None (default) to try to fit all table-parallel tables on the GPU.
+                        CPU offloading row-sliced and data-parallel tables is not supported.
+    data_parallel_threshold: Embedding smaller than this will be run data-parallel.
     sliced_out_ranges: list of [output_pos, num_slices] for each input, used to merged outputs.
     table_groups: lists of table ids. group 0 runs dp, group 1 do column slice with table parallel,
                   group 2 runs row_slice onto all workers.
@@ -107,12 +129,14 @@ class DistEmbeddingStrategy():
                input_table_map=None,
                column_slice_threshold=None,
                row_slice_threshold=None,
-               data_parallel_threshold=None):
+               data_parallel_threshold=None,
+               gpu_embedding_size=None):
     # code in DMP to skip hvd call in single process case may assume "basic"
     self.strategy = "basic" if world_size == 1 else strategy
     # column_slice can be used to enable more table concat, so keep it in single process
     self.column_slice_threshold = column_slice_threshold
     self.row_slice_threshold = row_slice_threshold
+    self.gpu_embedding_size = gpu_embedding_size
     self.data_parallel_threshold = data_parallel_threshold
     self.global_configs = [e.get_config() for e in embeddings]
     # Insert layer type information to config dicts
@@ -134,17 +158,20 @@ class DistEmbeddingStrategy():
     if self.table_groups[2]:
       self.row_sliced_configs, self.row_inputs_offsets = self.create_row_sliced_configs(
           [self.global_configs[idx] for idx in self.table_groups[2]], world_size)
+    else:
+      self.row_sliced_configs = [[] for _ in range(world_size)]
 
     # 3. handle column slicing and table parallel
     if not self.table_groups[1]:
       return
+
     # Create (maybe) sliced configs
     sliced_configs, self.sliced_out_ranges = self.create_col_sliced_configs(
         [self.global_configs[idx] for idx in self.table_groups[1]], world_size,
         self.column_slice_threshold, self.map_groups[1])
 
     # Apply strategy and save nested list containing table indices by rank
-    table_ids = self.apply_stragety(self.strategy, world_size, sliced_configs)
+    table_ids = self.apply_strategy(self.strategy, world_size, sliced_configs)
 
     # Following are ALL nested lists holding info for distributing embeddings, ordered by rank
     self.input_ids_list = []
@@ -168,6 +195,9 @@ class DistEmbeddingStrategy():
           if table_idx == mapped_idx:
             rank_input_ids.append(k)
             rank_input_map.append(m)
+
+      # Only offloading the table-parallel/column-sliced embeddings.
+      rank_configs = self._maybe_offload(configs=rank_configs)
 
       # concat eligible tables then adjust local config and map
       rank_configs, rank_input_map, input_offsets, group, weight_offsets = self._create_concat(
@@ -193,6 +223,35 @@ class DistEmbeddingStrategy():
         index
         for _, index in sorted(zip(worker_order_input_ids, range(len(worker_order_input_ids))))
     ]
+
+  def _maybe_offload(self, configs):
+    """
+      Offloads the largest tables among the "configs" argument,
+      such that the sum of not offloaded tables is smaller than the threshold.
+
+      Args:
+        configs (List): a list of configs to process
+
+      Returns:
+        A list of configs in the same order as the "configs" argument,
+        but with the "cpu_offload" field set to either True or False.
+    """
+    configs = configs.copy()
+
+    if self.gpu_embedding_size is None:
+      for config in configs:
+        config['cpu_offload'] = False
+      return configs
+
+    current_total_size = 0
+
+    # use indices rather than sorting the list directly to maintain the original order
+    _, order = _argsort(configs, key=lambda x: x['input_dim'] * x['output_dim'])
+    for index in order:
+      config = configs[index]
+      current_total_size += config['input_dim'] * config['output_dim']
+      config['cpu_offload'] = current_total_size > self.gpu_embedding_size
+    return configs
 
   # below are the methods to divide table into groups and adjust input and input map accordingly
   def init_table_groups(self, configs):
@@ -328,7 +387,7 @@ class DistEmbeddingStrategy():
     return sliced_configs, offsets
 
   # pylint: disable=missing-param-doc,missing-type-doc,missing-raises-doc
-  def apply_stragety(self, mode, world_size, sliced_configs):
+  def apply_strategy(self, mode, world_size, sliced_configs):
     """Distribute tables to workers from sliced config, a nested list.
     Returns:
       divided_ids (list): world_size length list. Each element is list of
@@ -372,8 +431,10 @@ class DistEmbeddingStrategy():
     grouped_table_ids, concat_configs = [], []
     for table_id, config in enumerate(table_configs):
       for group, concat_config in zip(grouped_table_ids, concat_configs):
-        if config['output_dim'] == concat_config['output_dim'] and config.get(
-            'combiner') == concat_config.get('combiner'):
+        same_output_dim = config['output_dim'] == concat_config['output_dim']
+        same_combiner = config.get('combiner') == concat_config.get('combiner')
+        no_offload = not (config['cpu_offload'] or concat_config['cpu_offload'])
+        if same_output_dim and same_combiner and no_offload:
           group.append(table_id)
           concat_config['input_dim'] += config['input_dim']
           concat_config['input_dims'].append(config['input_dim'])
@@ -444,11 +505,16 @@ class DistributedEmbedding(tf.keras.layers.Layer):
         N is smallest power of 2 makes each slice smaller than column_slice_threshold. Default None.
     row_slice_threshold: Embedding larger than this will be evenly row sliced onto all workers
     dp_input (bool): If True, takes data parallel input, i.e. in shape
-        [local_batch_size x global_num_embeddings]. Otherwise take model parall input in shape
+        [local_batch_size x global_num_embeddings]. Otherwise take model parallel input in shape
         [global_batch_size x local_num_embeddings]. Default True.
     input_table_map (list or None): same length list as inputs, map `input[i]`
         to `table[input_table_map[i]]`. None means there are same number of
         inputs/tables and `input[i]` map to `table[i]`. Default None.
+    data_parallel_threshold: Embedding smaller than this will be run data-parallel.
+    gpu_embedding_size: total number of local table-parallel embedding elements to fit on the GPU.
+                        if more elements are used, they will be CPU offloaded.
+                        Set to None (default) to try to fit all table-parallel tables on the GPU.
+                        CPU offloading row-sliced and data-parallel tables is not supported.
   """
 
   def __init__(self,
@@ -459,6 +525,7 @@ class DistributedEmbedding(tf.keras.layers.Layer):
                dp_input=True,
                input_table_map=None,
                data_parallel_threshold=None,
+               gpu_embedding_size=None,
                **kwargs):
 
     super().__init__(**kwargs)
@@ -476,6 +543,7 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     # ideally we could fallback to dp, but do mp for mp_input backward compatibilty
     self.dp_input = dp_input
     self.column_slice_threshold = column_slice_threshold
+    self.gpu_embedding_size = gpu_embedding_size
     if self.world_size > 1:
       self.row_slice_threshold = row_slice_threshold if dp_input else None
       self.data_parallel_threshold = data_parallel_threshold if dp_input else None
@@ -490,7 +558,8 @@ class DistributedEmbedding(tf.keras.layers.Layer):
                                           input_table_map=input_table_map,
                                           column_slice_threshold=column_slice_threshold,
                                           row_slice_threshold=self.row_slice_threshold,
-                                          data_parallel_threshold=self.data_parallel_threshold)
+                                          data_parallel_threshold=self.data_parallel_threshold,
+                                          gpu_embedding_size=self.gpu_embedding_size)
 
     # Here we make sure empty lists exist
     # create data parallel layers
@@ -530,8 +599,17 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     # For stock keras Embedding, we switch underlying layer for better performance
     # If inputs are custom layers, original layer will be used
     layer_type = config.pop('layer_type')
-    layer_type = Embedding if layer_type == tf.keras.layers.Embedding else layer_type
-    return layer_type.from_config(config)
+    offloaded = config.pop('cpu_offload', False)
+
+    if layer_type == tf.keras.layers.Embedding:
+      layer_type = Embedding
+
+    if offloaded and layer_type == Embedding:
+      config['use_custom_kernel'] = False
+
+    layer = layer_type.from_config(config)
+    layer.cpu_offloaded = offloaded
+    return layer
 
   def _call_data_parallel(self, inputs):
     outputs = [self.dp_layers[m](inp) for m, inp in zip(self.strategy.map_groups[0], inputs)]
@@ -611,6 +689,7 @@ class DistributedEmbedding(tf.keras.layers.Layer):
   def _call_row_slice(self, inputs):
     # initial version, just allgather input, do lookup and allreduce output
     # for lookup that does not exist on this worker(OOB), zero vector is added in
+
     inputs = hvd.grouped_allgather(inputs)
     # offset inputs
     inputs = [
@@ -905,7 +984,9 @@ class DistributedEmbedding(tf.keras.layers.Layer):
 
     # build both col and row slice tables
     for layer in self.local_embedding_layers + self.row_layers:
-      layer.build(input_shape[0] if input_shape else None)
+      device = 'CPU:0' if layer.cpu_offloaded else 'GPU:0'
+      with tf.device(device):
+        layer.build(input_shape[0] if input_shape else None)
       for var in layer.trainable_weights:
         # Mark local(model parallel) variable. use prefix de(distributed embeddings) to avoid conflicts.
         var.de_local = True
