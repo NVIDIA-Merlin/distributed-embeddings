@@ -34,8 +34,8 @@ class ConcatInitializer(tf.keras.initializers.Initializer):
     self._initializer = initializer
     self.sizes = sizes
 
-  def __call__(self, shape, **kwargs):
-    weights = [self._initializer([size, shape[1]], **kwargs) for size in self.sizes]
+  def __call__(self, shape, dtype=None, **kwargs):
+    weights = [self._initializer([size, shape[1]], dtype=dtype, **kwargs) for size in self.sizes]
     weights = tf.concat(weights, axis=0)
     return weights
 
@@ -64,6 +64,228 @@ def _argsort(l, key=None, reverse=False):
   order = [x[0] for x in r]
   values = [x[1] for x in r]
   return values, order
+
+
+def _transpose_ragged_2d(x, world_size, num_local_features):
+  """
+  Transpose from a tf.RaggedTensor from worker-major to feature-major format.
+
+  Args:
+    x (tf.RaggedTensor): input tensor
+    world_size: total number of workers
+    num_local_features: number of features on the current worker
+
+  Returns:
+    A transposed tf.RaggedTensor
+  """
+  x = tf.split(x, world_size * num_local_features)
+  transposed = []
+  for j in range(num_local_features):
+    for i in range(world_size):
+      transposed.append(x[i * num_local_features + j])
+  transposed = tf.concat(transposed, axis=0)
+  return transposed
+
+
+def _dp_to_mp_input_ragged(dp_inputs, rank_to_local_features):
+  """
+  Transforms embedding input indices from data-parallel to model-parallel paradigm
+  using horovod all-to-all operations. Only supports tf.RaggedTensor inputs.
+
+  Args:
+    dp_inputs (dict of ragged tf.Tensors): a dictionary mapping feature index
+      to a ragged data-parallel tensor with the input data for this feature.
+    rank_to_local_features (dict of lists): a dictionary mapping the rank of each horovod worker
+        to the list of feature indices that are supposed to be gathered onto that worker.
+
+  Returns:
+    A dictionary mapping the index of the feature to a ragged tensor.
+    Each tensor contains model-parallel data for the corresponding feature.
+
+  Raises:
+    ValueError: in case of incorrect input.
+  """
+
+  if not isinstance(dp_inputs, dict):
+    raise ValueError(f'Expected a dict, got: {type(dp_inputs)}')
+
+  if not dp_inputs:
+    return {}
+
+  # The split tensor for the first all-to-all of the flat tensor values
+  a2a_splits = {}
+
+  # features_dp is a list of all values we need to send to each worker.
+  # It is not simply dp_inputs.values() because some tensors might need to be sent
+  # to multiple workers. For example because an embedding table is split onto multiple workers.
+  features_dp = []
+  for worker, features in rank_to_local_features.items():
+    a2a_splits[worker] = tf.math.reduce_sum([tf.size(dp_inputs[f].flat_values) for f in features])
+    # Need to cast in case of zero, which turns out as float32.
+    a2a_splits[worker] = tf.cast(a2a_splits[worker], dtype=tf.int32)
+
+    for feature_id in features:
+      features_dp.append(dp_inputs[feature_id])
+
+  flat_values_a2a_splits = [a2a_splits[i] for i in range(hvd.size())]
+
+  flat_features_dp = tf.concat(features_dp, axis=0).flat_values
+  # Perform the first all-to-all for the ragged tensor values.
+  flat_features_mp, _ = hvd.alltoall(flat_features_dp, splits=flat_values_a2a_splits)
+
+  local_batch = next(iter(dp_inputs.values())).shape[0]
+
+  # Compute the splits for the second all-to-all (row-lengths).
+  row_lengths_a2a_splits = [local_batch * len(rank_to_local_features[r]) for r in range(hvd.size())]
+
+  # Perform the second all-to-all on the row-length data.
+  row_lengths_dp = tf.concat([x.row_lengths() for x in features_dp], axis=0)
+  row_lengths_mp, _ = hvd.alltoall(row_lengths_dp, splits=row_lengths_a2a_splits)
+
+  num_mp_features = len(rank_to_local_features[hvd.rank()])
+  if num_mp_features == 0:
+    # The current worker has not received any variable-length features.
+    # Nothing to be done. Simply return an empty dict.
+    return {}
+
+  # This reshape is necessary for correct static shape inference in graph mode
+  row_lengths_mp = tf.reshape(row_lengths_mp, shape=[num_mp_features * local_batch * hvd.size()])
+
+  # Construct a large ragged tensor containing all the features the current worker has received.
+  flat_features_mp = tf.RaggedTensor.from_row_lengths(values=flat_features_mp,
+                                                      row_lengths=row_lengths_mp)
+
+  # Need to transpose from worker-major to feature-major before we split into individual features.
+  flat_features_mp = _transpose_ragged_2d(flat_features_mp,
+                                          num_local_features=num_mp_features,
+                                          world_size=hvd.size())
+
+  # Split the large tensor into a list of smaller ragged tensors for each feature.
+  features_mp = tf.split(flat_features_mp, num_or_size_splits=num_mp_features)
+  features_mp = dict(zip(rank_to_local_features[hvd.rank()], features_mp, strict=True))
+  return features_mp
+
+
+def _dp_to_mp_input_dense(dp_inputs, rank_to_local_features):
+  """
+    Transforms embedding input indices from data-parallel to model-parallel paradigm
+    using horovod all-to-all operations. Only supports fixed-length tf.Tensor inputs.
+
+  Args:
+    dp_inputs (dict of dense tf.Tensors): a dictionary mapping feature index
+        to a potentially ragged data-parallel tensor with the input data for this feature.
+    rank_to_local_features (dict of lists): a dictionary mapping the rank of each horovod worker
+        to the list of feature indices that are supposed to be gathered onto that worker.
+
+  Returns:
+    A dictionary mapping the index of the feature to a dense tf.Tensor.
+    Each tensor contains model-parallel data for the corresponding feature.
+
+  Raises:
+    ValueError: in case of incorrect input.
+  """
+  if not isinstance(dp_inputs, dict):
+    raise ValueError(f'Expected a dict, got: {type(dp_inputs)}')
+
+  if not dp_inputs:
+    return {}
+
+  world_size, rank = hvd.size(), hvd.rank()
+
+  comm_dtype = tf.int32
+  for inp in dp_inputs.values():
+    if inp.dtype == tf.int64:
+      comm_dtype = tf.int64
+  dp_inputs = {k: tf.cast(v, comm_dtype) for k, v in dp_inputs.items()}
+  local_shapes, local_splits, global_splits, flat_inputs = [], [], [], []
+
+  for rank_input_ids in rank_to_local_features.values():
+    rank_inputs = [dp_inputs[feature_key] for feature_key in rank_input_ids]
+    local_shapes.append([_get_shape(inp) for inp in rank_inputs])
+    rank_inputs = [tf.reshape(inp, [-1]) for inp in rank_inputs]
+    local_splits.append([_get_shape(inp)[0] for inp in rank_inputs])
+    global_splits.append(sum(local_splits[-1]))
+    flat_inputs += rank_inputs
+  dp_inputs = tf.concat(flat_inputs, 0)
+
+  mp_inputs, _ = hvd.alltoall(dp_inputs, splits=global_splits, name='inp_dp_to_mp')
+
+  mp_inputs = tf.reshape(mp_inputs, [world_size, -1])
+  mp_inputs = tf.split(mp_inputs, local_splits[rank], 1)
+  mp_inputs = [
+      tf.reshape(inp, [world_size * shape[0]] + shape[1:])
+      for inp, shape in zip(mp_inputs, local_shapes[rank])
+  ]
+
+  mp_inputs = dict(zip(rank_to_local_features[rank], mp_inputs, strict=True))
+  return mp_inputs
+
+
+def _dp_to_mp_input(dp_inputs, rank_to_local_features):
+  """
+  Transforms embedding input indices from data-parallel to model-parallel paradigm
+  using horovod all-to-all operations. The resulting model-parallel indices
+  can be used to run a model-parallel embedding lookup. Supports dense tf.Tensor
+  and tf.RaggedTensor inputs.
+
+  Args:
+    dp_inputs (dict of potentially ragged tf.Tensors): a dictionary mapping feature index
+        to a potentially ragged data-parallel tensor with the input data for this feature.
+        Each tensor can be either a dense tf.Tensor or a tf.RaggedTensor.
+    rank_to_local_features (dict of lists): a dictionary mapping the rank of each horovod worker
+        to the list of feature indices that are supposed to be gathered onto that worker.
+        E.g., passing rank_to_local_features={0: [0, 1], 1: [2]} means that worker "0" should
+        receive the data for features "0" and "1" and worker "1" should receive
+        the data for feature "2".
+
+  Returns:
+    A dictionary mapping the index of the feature to a potentially ragged tensor.
+    Each tensor contains model-parallel data for the corresponding feature.
+
+  Raises:
+    ValueError: if a tf.SparseTensor input has been passed. This is not supported.
+  """
+  # Handle the trivial single-worker case separately.
+  if hvd.size() <= 1:
+    # Expected input order may still change in case of single process.
+    inputs = {idx: dp_inputs[idx] for idx in rank_to_local_features[0]}
+    return inputs
+
+  if isinstance(dp_inputs, list):
+    dp_inputs = dict(enumerate(dp_inputs))
+
+  # Partition the input tensors into two groups: fixed length and variable length,
+  # so that they can be handled separately.
+  ragged_dp_inputs, dense_dp_inputs = {}, {}
+  for i, f in dp_inputs.items():
+    if isinstance(f, tf.RaggedTensor):
+      ragged_dp_inputs[i] = f
+    elif isinstance(f, tf.SparseTensor):
+      # TODO(tgrel): support sparse input, possibly by converting to ragged here
+      raise ValueError('Sparse tensor data-parallel input is not supported')
+    else:
+      dense_dp_inputs[i] = f
+
+  # Partition the input map into two separate maps:
+  #  - One that maps each worker rank to a list of dense features it is supposed to receive.
+  #  - The other that maps each worker rank to a list of variable length features it
+  #    is supposed to receive.
+  rank_to_dense_features, rank_to_ragged_features = {}, {}
+  for rank in range(hvd.size()):
+    all_rank_features = rank_to_local_features[rank]
+    rank_to_dense_features[rank] = [v for v in all_rank_features if v in dense_dp_inputs]
+    rank_to_ragged_features[rank] = [v for v in all_rank_features if v in ragged_dp_inputs]
+
+  # Call the subroutine for fixed-length inputs.
+  dense_mp_inputs = _dp_to_mp_input_dense(dense_dp_inputs,
+                                          rank_to_local_features=rank_to_dense_features)
+
+  # Call the subroutine for variable-length inputs.
+  ragged_mp_inputs = _dp_to_mp_input_ragged(ragged_dp_inputs,
+                                            rank_to_local_features=rank_to_ragged_features)
+
+  mp_inputs = {**dense_mp_inputs, **ragged_mp_inputs}
+  return mp_inputs
 
 
 @tf.custom_gradient
@@ -624,31 +846,9 @@ class DistributedEmbedding(tf.keras.layers.Layer):
     """
     # get model parallel input from data parallel
     if self.dp_input:
-      if self.world_size > 1:
-        comm_dtype = tf.int32
-        for inp in inputs:
-          if inp.dtype == tf.int64:
-            comm_dtype = tf.int64
-        inputs = [tf.cast(inp, comm_dtype) for inp in inputs]
-        local_shapes, local_splits, global_splits, flat_inputs = [], [], [], []
-        for rank_input_ids in self.strategy.input_ids_list:
-          rank_inputs = [inputs[index] for index in rank_input_ids]
-          local_shapes.append([_get_shape(inp) for inp in rank_inputs])
-          rank_inputs = [tf.reshape(inp, [-1]) for inp in rank_inputs]
-          local_splits.append([_get_shape(inp)[0] for inp in rank_inputs])
-          global_splits.append(sum(local_splits[-1]))
-          flat_inputs += rank_inputs
-        inputs = tf.concat(flat_inputs, 0)
-        inputs, _ = hvd.alltoall(inputs, splits=global_splits, name='inp_dp_to_mp')
-        inputs = tf.reshape(inputs, [self.world_size, -1])
-        inputs = tf.split(inputs, local_splits[self.rank], 1)
-        inputs = [
-            tf.reshape(inp, tf.concat([[self.world_size * shape[0]], shape[1:]], 0))
-            for inp, shape in zip(inputs, local_shapes[self.rank])
-        ]
-      else:
-        # expected input order may still change in case of single process
-        inputs = [inputs[idx] for idx in self.strategy.input_ids_list[0]]
+      rank_to_local_features = dict(enumerate(self.strategy.input_ids_list))
+      inputs = _dp_to_mp_input(inputs, rank_to_local_features)
+      inputs = list(inputs.values())
 
     if len(inputs) != len(self.strategy.local_maps[self.rank]):
       raise ValueError(F"Expect {self.strategy.local_maps[self.rank]} inputs, got {len(inputs)}.")
