@@ -28,7 +28,7 @@ python main.py --model small --optimizer sgd --batch_size 65536
 **Multiple GPU:**
 
 ```python
-horovodrun -np 32 main.py --model large --optimizer adagrad --batch_size 65536 --column_slice_threshold $((1280*1048576))
+horovodrun -np 32 python main.py --model large --optimizer adagrad --batch_size 65536 --column_slice_threshold $((1280*1048576))
 ```
 
 **Arguments:**
